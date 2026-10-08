@@ -60,6 +60,12 @@ def load_key_policy(path: Optional[str], warn) -> Optional[List[Tuple[str, bytes
 def main(argv: Optional[List[str]] = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     out = sys.stdout
+    # Human-readable lines quote statement text; on a stdout whose encoding
+    # cannot represent it, escape rather than die before the JSON line.
+    try:
+        out.reconfigure(errors="backslashreplace")
+    except (AttributeError, ValueError):
+        pass
 
     def warn(msg: str) -> None:
         sys.stderr.write("warning: %s\n" % msg)

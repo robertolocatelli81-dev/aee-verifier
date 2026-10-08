@@ -219,5 +219,27 @@ class TestEd25519ScalarRange(unittest.TestCase):
         self.assertFalse(ed25519.verify(ident, b"m", ident + ed25519.L.to_bytes(32, "little")))
 
 
+class TestStdoutEncoding(unittest.TestCase):
+    def test_non_ascii_reason_under_ascii_stdout(self):
+        # Reasons quote statement text (here a CJK attackId).  Under a
+        # non-UTF-8 stdout encoding the first build raised UnicodeEncodeError
+        # before the JSON line; the line itself is ASCII and must still come out.
+        st, _ = B.build()
+        st["predicate"]["attackResults"][0]["attackId"] = "\u653b\u6483-1"
+        with tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False) as fh:
+            fh.write(B.dumps(st))
+            path = fh.name
+        try:
+            for enc in ("ascii", "latin-1"):
+                env = dict(os.environ, PYTHONIOENCODING=enc)
+                proc = subprocess.run([sys.executable, os.path.join(ROOT, "aee-verify"), path],
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+                self.assertEqual(proc.returncode, 1, proc.stderr.decode())
+                line = json.loads(proc.stdout.decode("ascii").strip().splitlines()[-1])
+                self.assertIn("row-attack-id-unknown", line["codes"])
+        finally:
+            os.unlink(path)
+
+
 if __name__ == "__main__":
     unittest.main()
