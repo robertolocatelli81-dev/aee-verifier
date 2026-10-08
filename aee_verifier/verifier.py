@@ -671,7 +671,10 @@ class Verifier:
         )
         observed_set = sha256_hex(canonicalize(observed_leaves))
         for rec in records:
-            if rec.usable and rec.covering_kind:
+            # Kind constraints are evaluated on every parsed covering-kind
+            # record, including one whose aeeMethod is missing or unregistered:
+            # aeeMethod is itself a constraint of three of the four kinds.
+            if rec.parsed is not None and rec.parse_problem is None and rec.covering_kind:
                 self._check_kind(rec, env_info, issued_at, manifest_ids, observed_set)
 
     def _parse_payload(self, rec: Record) -> None:
@@ -802,7 +805,7 @@ class Verifier:
 
         # every carried sealed record's aeeObservedSet must equal the recompute
         for rec in records:
-            if rec.usable and rec.kind == "sealed" and rec.observed_set_mismatch:
+            if rec.parsed is not None and rec.parse_problem is None and rec.kind == "sealed" and rec.observed_set_mismatch:
                 rep.fail("observed-set-mismatch", "observationRecords[%d] (sealed) commits to a record set the statement does not carry" % rec.index)
 
         # a clean row resolves no index to an interception record
@@ -846,8 +849,11 @@ class Verifier:
 
         bound = [r for r in records if r.usable and r.binding == binding]
 
-        # every bound covering-kind record satisfies every constraint of its kind
-        for rec in bound:
+        # every bound covering-kind record satisfies every constraint of its kind.
+        # "Binds to this run" reads aeeRunBinding only (L595-L598): a record
+        # whose aeeMethod is missing or unregistered still binds, and then
+        # violates the aeeMethod constraint of its kind.
+        for rec in [r for r in records if r.parsed is not None and r.parse_problem is None and r.binding == binding]:
             if rec.covering_kind and not rec.kind_valid:
                 if rec.binding_version_problem:
                     rep.fail("binding-version-unsupported", "observationRecords[%d] declares an aeeBindingVersion this verifier does not implement" % rec.index)

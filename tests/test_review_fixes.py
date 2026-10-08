@@ -158,5 +158,54 @@ class TestAnchoredSyntax(unittest.TestCase):
         self.assertEqual(decode_base64("G620"), b"\x1b\xad\xb4")
 
 
+class TestUniversalKindCheckReadsAeeMethod(unittest.TestCase):
+    """L595-L608: every carried record that binds to this run (its
+    aeeRunBinding equals the derived digest) and names a covering kind
+    satisfies every constraint of that kind.  ``aeeMethod: intercepted`` is a
+    constraint of the arming and sealed kinds and ``reconstructed`` of the
+    examination kind (L1329, L1335, L1337): a missing or unregistered
+    aeeMethod violates it, it does not take the record out of scope."""
+
+    ROWS = [{"attackId": a, "containmentObserved": l, "basis": "substrate", "method": "intercepted",
+             "attribution": "paired", "actualLayer": "none", "refs": ["arm", "seal"]}
+            for a, l in (("CO-EXFIL-1", "no_egress"), ("CO-EXFIL-2", "no_egress"), ("FS-WRITE-1", "no_write"))]
+
+    def codes_with(self, extra):
+        recs = [{"name": "arm", "kind": "arming"}, {"name": "seal", "kind": "sealed"}] + extra
+        st, _ = B.build(records=recs, rows=self.ROWS, observedAttacks=[])
+        return report(st).code_set()
+
+    def test_control_accepts(self):
+        self.assertEqual(self.codes_with([]), [])
+        self.assertEqual(self.codes_with([{"name": "md", "kind": "moat-drop", "drop": ["aeeMethod"]}]), [])
+
+    def test_down_seal_with_registered_method_is_refused(self):
+        self.assertIn("sealed-record-invalid", self.codes_with([{"name": "s2", "kind": "sealed", "stillArmed": False}]))
+
+    def test_down_seal_without_method_is_refused(self):
+        self.assertIn("sealed-record-invalid",
+                      self.codes_with([{"name": "s2", "kind": "sealed", "stillArmed": False, "drop": ["aeeMethod"]}]))
+
+    def test_down_seal_with_unregistered_method_is_refused(self):
+        self.assertIn("sealed-record-invalid",
+                      self.codes_with([{"name": "s2", "kind": "sealed", "stillArmed": False, "method": "bogus"}]))
+
+    def test_seal_missing_method_only(self):
+        self.assertIn("sealed-record-invalid", self.codes_with([{"name": "s2", "kind": "sealed", "drop": ["aeeMethod"]}]))
+
+    def test_arming_bad_armed_at_without_method(self):
+        self.assertIn("arming-record-invalid",
+                      self.codes_with([{"name": "a2", "kind": "arming", "armedAt": "nope", "drop": ["aeeMethod"]}]))
+
+    def test_examination_without_method(self):
+        self.assertIn("examination-record-invalid",
+                      self.codes_with([{"name": "e2", "kind": "examination", "drop": ["aeeMethod"]}]))
+
+    def test_observed_set_checked_on_seal_without_method(self):
+        # N33: aeeObservedSet is compared on every parseable sealed record
+        got = self.codes_with([{"name": "s2", "kind": "sealed", "observedSet": "00" * 32, "drop": ["aeeMethod"]}])
+        self.assertIn("observed-set-mismatch", got)
+
+
 if __name__ == "__main__":
     unittest.main()
