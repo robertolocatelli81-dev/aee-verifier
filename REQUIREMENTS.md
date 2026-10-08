@@ -9,6 +9,12 @@ policy and have no verifier-side check by the spec's own design.
 
 Codes are this verifier's names (the spec defines none); see README.md.
 
+## 0. Use Cases (L65–L93)
+
+| Line | Requirement | Check | Code |
+|------|-------------|-------|------|
+| L90–L92 | a consumer MUST NOT infer a composite guarantee from two attestations unless its policy binds both to the same execution | n/a (consumer policy across statements) | n/a |
+
 ## A. Statement bytes (Prerequisites)
 
 | Line | Requirement | Check | Code |
@@ -121,7 +127,7 @@ Codes are this verifier's names (the spec defines none); see README.md.
 | L1320–L1340 | reserved members per kind: interception `aeePayloadCommitment`; arming `armedAt` (profile, ≤ `issuedAt`), `aeePostureDigest` = pinned, `aeeAssessedAttacks`, `aeeMethod` intercepted; sealed `aeeStillArmed` bool, `aeeDropCount` int, `aeePostureDigest`, `aeeObservedSet`, `aeeObservedAttacks`, optional `aeeDropBound`, `aeeMethod` intercepted; examination `aeeMethod` reconstructed (payload SHOULD identify states: not checked) | `_check_kind` | `*-record-invalid` |
 | L1344–L1347 | a record violating any constraint of its kind covers nothing | `kind_valid` | as above |
 | L1361–L1373 | sealed covers no clean row unless armed, drop count within bound, posture equal to pinned and to each resolved arming | `_check_kind` + per-row seal selection (N32, N34) | `sealed-record-invalid`, `class-match-failed` |
-| L1375–L1408 | `moat-drop`, `uncommitted-observation` cover nothing; MUST verify their signatures, MUST include leaves in `batchRoot`, MUST NOT class-match, MUST NOT enter the method cap, MUST NOT enter `aeeObservedSet`; SHOULD name the kind in the refusal | `_cross_checks`, `_evaluate_payloads`, `_derive_tiers` | `row-resolves-non-covering-kind` |
+| L1375–L1408 | `moat-drop`, `uncommitted-observation` cover nothing; MUST verify their signatures, MUST include leaves in `batchRoot`, MUST NOT class-match, MUST NOT enter the method cap, MUST NOT enter `aeeObservedSet`; SHOULD name the kind in the refusal | `_cross_checks`, `_evaluate_payloads`; signatures: verified on the same terms as every record, i.e. only where an output reads them (the tier of covering records), so a non-covering record's signature is never checked and no output depends on it | `row-resolves-non-covering-kind` |
 | L1431–L1438 | producer MUST NOT put `aeePayloadCommitment` on an `uncommitted-observation` ("stated and not gated") | not gated, per the text | n/a |
 | L1454–L1458 | `aeePayloadCommitment` non-empty, sorted, duplicate-free, lowercase 64-hex | `_check_kind` | `interception-record-invalid` |
 | L1467–L1473 | `aeeAssessedAttacks` sorted, duplicate-free, declared identifiers; assessed union MUST be a subset | `_check_kind`, `_cross_checks` (N36) | `arming-record-invalid`, `assessed-attacks-not-declared` |
@@ -152,7 +158,7 @@ L2012, L2036, L2198, L2305 restate rules already listed above (validity gate pre
 ## Count
 
 Measured: 83 `MUST` (26 of them `MUST NOT`), 10 `SHOULD`, 3 `REQUIRED` in the
-spec text; 73 distinct condition codes emitted by the verifier (counted from
+spec text; 75 distinct condition codes emitted by the verifier (counted from
 the sources on 2026-10-08).  The tables above map every normative sentence to
 a check or to "n/a"; the n/a rows bind producers, substrates or downstream
 consumer policy and have no verifier-side check by the spec's own design.

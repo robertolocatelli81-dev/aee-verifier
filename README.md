@@ -3,7 +3,7 @@
 A verifier for the in-toto predicate **Adversarial Execution Evidence**
 (predicate type `https://in-toto.io/attestation/adversarial-execution-evidence/v0.7`,
 version 0.7.0), built from the specification text at agent-evidence-vectors
-v0.12.1 and from nothing else, for the Empirical Software Engineering study
+v0.12.1 and the material listed under "Sources used", for the Empirical Software Engineering study
 "do independent builds of one spec share mistakes?" (finos/ai-governance-framework#337,
 `docs/study/emse-2026/builders.md`).
 
@@ -14,10 +14,15 @@ invalid one it prints the conditions it violated.
 ## Run
 
 ```
+/path/to/aee-verifier/aee-verify <statement.json>      # from any directory
+# or, from the repository root only
 python3 -m aee_verifier <statement.json>
-# or
-./aee-verify <statement.json>
 ```
+
+`python3 -m aee_verifier` finds the package only when the current directory is
+the repository root (elsewhere Python exits 1 with "No module named
+aee_verifier" and prints no JSON line); the `aee-verify` launcher adds its own
+directory to the path and works from anywhere.
 
 Python 3.9 or later, standard library only (no third-party dependency; the
 Ed25519 verifier is RFC 8032 in plain Python).  Tested on CPython 3.9.25,
@@ -38,7 +43,8 @@ Human-readable lines, then **one JSON object on the last line**:
 {"verdict":"reject","codes":["result-mismatch"],"result":null,"tiers":[],"primaryCode":"result-mismatch"}
 ```
 
-* `verdict`: `accept` or `reject`.
+* `verdict`: `accept` or `reject` (`error`, with code `usage` or
+  `unreadable-input`, on exit status 2).
 * `codes`: the conditions found (this verifier's own names, below); empty on accept.
 * `result`: the recomputed token (`fail` < `degraded` < `pass_indirect` < `pass`), `null` on reject.
 * `tiers`: one of `declared` / `attested` / `unattested` per `attackResults` row, in order; `[]` on reject.
@@ -104,9 +110,11 @@ signature verification against the pinned keys.
 * Signature algorithms other than Ed25519.
 
 Condition names are this verifier's own (the specification defines none and
-the suite's registry was not consulted); the 73 distinct codes it can emit are
-listed by `grep -o 'rep.fail("[a-z0-9-]*"' aee_verifier/verifier.py` plus the
-parser codes (`invalid-utf8`, `duplicate-member`, `nesting-depth-exceeded`,
+the suite's registry was not consulted); the 75 distinct condition codes it
+can emit are the 62 listed by `grep -o 'rep.fail("[a-z0-9-]*"'
+aee_verifier/verifier.py | sort -u`, the two passed through a helper
+(`substrate-digest-malformed`, `catch-policy-digest-malformed`), the parser
+codes (`invalid-utf8`, `duplicate-member`, `nesting-depth-exceeded`,
 `ill-formed-string`, `integer-out-of-safe-range`, `number-out-of-range`,
 `malformed-json`) and the four `<kind>-record-invalid` names.
 
@@ -119,11 +127,14 @@ Only the material the study permits:
 * `spec/pypi-0.12.1-README-what-the-suite-compares.md` — the output contract
   section of the agent-evidence-vectors 0.12.1 README on PyPI;
 * `builders.md` (study rules);
-* public standards the spec cites, from their primary sources: in-toto
-  attestation framework (Statement v1, ResourceDescriptor, DigestSet, parsing
-  rules), DSSE envelope and protocol, RFC 8785 (JCS, incl. Appendix B
-  samples), RFC 7493, RFC 8259, RFC 3339, RFC 6962, RFC 8032 (Ed25519 and its
-  test vectors), RFC 6838.
+* public standards the spec cites, downloaded from their primary sources:
+  in-toto attestation framework (Statement v1, ResourceDescriptor, DigestSet,
+  parsing rules), DSSE envelope and protocol, RFC 8785 (JCS, incl. Appendix B
+  samples), RFC 7493, RFC 3339, RFC 6962, RFC 8032 (Ed25519 and its test
+  vectors);
+* RFC 8259 (section 8.1, byte order mark) and RFC 6838 (section 4.2, case of
+  media type names) are cited in SPEC_NOTES from prior knowledge; they were not
+  downloaded or re-read for this build.
 
 Not opened: the test set, its changelog, the reference `aee` / `aee-verify`
 rails, `aee/codes.go`, any other verifier for this predicate, any other file
@@ -134,7 +145,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 189 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 210 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -146,18 +157,48 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   positive documents, RFC 3339 calendar rules, RFC 8032 vectors and
   malformed signatures / point encodings (with `cryptography` as an optional
   independent oracle when installed), key-policy loading.
-* Mutation testing (`tests/mutate.py`, measured 2026-10-08 on CPython 3.11.2):
-  846 mutants, 802 killed, 44 survived; every survivor is classified in
-  `tests/MUTATION.md` (equivalent mutations: message text, short-circuit
-  flags, key-ordering, constants whose change is masked by a later step).
+* `tests/test_review_fixes.py` (21 tests): the defects found by the review
+  before posting (below), each test failing on the first build or killing a
+  mutant the first build's suite let survive.
+* Mutation testing (`tests/mutate.py`, measured 2026-10-08 on CPython 3.11.2
+  after the review fixes): 861 mutants, 817 killed, 44 survived; every
+  survivor is classified in `tests/MUTATION.md` (equivalent or
+  verdict-equivalent: message text, short-circuit flags, key-ordering,
+  constants whose change is masked by a later step).
+
+## Review before posting
+
+An independent review of the first build (`fea61aa`) found, and these commits
+correct:
+
+* three inputs that crashed the verifier (an integer token of more than 4300
+  digits, a manifest class that is not an array of strings, an
+  `expectedPayloads` entry holding a non-string) and a reject reason that
+  could not be printed under a non-UTF-8 stdout; each ended with exit status 1
+  and no JSON line;
+* `$` and `\d` in the hex and timestamp patterns: a lowercase-64-hex value
+  followed by a newline, and timestamps with a trailing newline or non-ASCII
+  digits, were accepted;
+* the universal kind check skipped a run-bound `arming` / `sealed` /
+  `examination` record whose `aeeMethod` was missing or unregistered
+  (SPEC_NOTES N31);
+* three mutation survivors classified as equivalent that were not, and
+  documentation counts (condition codes, sources).
+
 
 ## Tools and model
 
 Written with Claude Code, model Claude Fable 5.1 (`claude-fable-5-1`), as the
 agent "Noûs" working for Roberto Locatelli, who directed the work and is
 responsible for it; a separate Claude Opus 5.5 instance reviews the build
-before it is posted.  No coding agent had seen the test set, its changelog or
-another implementation.
+before it is posted.  Neither agent opened the test set, its changelog or
+another implementation while building or reviewing (checked against the
+builder's session transcript).  Earlier, separate sessions in the same
+environment had listed the file names at the top of `vectors/` and read the
+first 48 lines of `vectors/indeterminate/INDEX.md`, and had cloned or
+installed agent-evidence-vectors 0.13.0 to run another family; no statement of
+this predicate's test set and no changelog were opened.  That exposure is
+declared in our reply on finos/ai-governance-framework#337.
 
 ## License
 

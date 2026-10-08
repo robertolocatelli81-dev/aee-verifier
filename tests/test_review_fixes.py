@@ -241,5 +241,30 @@ class TestStdoutEncoding(unittest.TestCase):
             os.unlink(path)
 
 
+class TestRowAttackIdNotHashable(unittest.TestCase):
+    def test_array_attack_id_is_a_reject_not_a_crash(self):
+        # kills the verifier L357 `all` -> `any` mutation that MUTATION.md listed
+        # as verdict-equivalent: with `any`, set() over an array attackId raised.
+        st, _ = B.build()
+        st["predicate"]["attackResults"][1]["attackId"] = ["CO-EXFIL-2"]
+        self.assertIn("row-attack-id-malformed", report(st).code_set())
+
+
+class TestSealOfAnotherRun(unittest.TestCase):
+    def test_only_seal_bound_to_another_run_does_not_satisfy_existence(self):
+        # L586-L589: the required sealed record must bind to THIS run.  Rows
+        # here are caught only, so no row points at the seal.
+        rows = [{"attackId": a, "containmentObserved": l, "basis": "substrate", "method": "intercepted",
+                 "attribution": "paired", "actualLayer": "policy.egress_sinkhole", "refs": ["int1"]}
+                for a, l in (("CO-EXFIL-1", "egress_captured"), ("CO-EXFIL-2", "egress_captured"),
+                             ("FS-WRITE-1", "file_written"))]
+        recs = [{"name": "int1", "kind": "interception"}, {"name": "seal", "kind": "sealed"}]
+        st, _ = B.build(records=recs, rows=rows, observedAttacks=[])
+        self.assertEqual(report(st).code_set(), [])                      # control: same run
+        recs[1] = {"name": "seal", "kind": "sealed", "binding": "cd" * 32}
+        st, _ = B.build(records=recs, rows=rows, observedAttacks=[])
+        self.assertIn("sealed-record-missing", report(st).code_set())
+
+
 if __name__ == "__main__":
     unittest.main()
