@@ -109,8 +109,8 @@ signature verification against the pinned keys.
   reference evidencing on `paired` rows).
 * Signature algorithms other than Ed25519.
 
-Condition names are this verifier's own (the specification defines none and
-the suite's registry was not consulted); the 75 distinct condition codes it
+Condition names are this verifier's own (the specification defines none, and
+`aee/codes.go`, the suite's registry, was not opened); the 75 distinct condition codes it
 can emit are the 62 listed by `grep -o 'rep.fail("[a-z0-9-]*"'
 aee_verifier/verifier.py | sort -u`, the two passed through a helper
 (`substrate-digest-malformed`, `catch-policy-digest-malformed`), the parser
@@ -124,8 +124,10 @@ Only the material the study permits:
 
 * `spec/adversarial-execution-evidence-v0.12.1.md` — the pinned spec,
   sha256 `759d2383e5da36fa509dc335e6159a20b87641b25ebbadcf1676c55d75ffd8b0` (verified);
-* `spec/pypi-0.12.1-README-what-the-suite-compares.md` — the output contract
-  section of the agent-evidence-vectors 0.12.1 README on PyPI;
+* `spec/pypi-0.12.1-README-what-the-suite-compares.md` — three sections of
+  the agent-evidence-vectors 0.12.1 README on PyPI: "What the suite compares"
+  (the output contract), "The registry" and "Indeterminate vectors" (both
+  cited in SPEC_NOTES R5, R6 and N3);
 * `builders.md` (study rules);
 * public standards the spec cites, downloaded from their primary sources:
   in-toto attestation framework (Statement v1, ResourceDescriptor, DigestSet,
@@ -170,8 +172,10 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
 ## Review before posting
 
 An independent review of the first build (`fea61aa`, Claude Opus 5.5 as a
-separate instance, working from the same permitted material only) found the
-defects below; commits `2088364`..`aaaf63b` apply its six patches and the
+separate instance, working from the material the builder used plus the
+build session's transcript, without the test set, its changelog,
+`aee/codes.go` or another verifier) found the defects below; commits
+`2088364` to `aaaf63b` apply its six patches and the
 commit after them adds one more case found while checking patch 0003.  The
 first build is kept in history; nothing was rewritten.
 
@@ -188,10 +192,12 @@ first build is kept in history; nothing was rewritten.
   seal reporting its moat down was refused with `aeeMethod: intercepted` and
   accepted without the member (patch 0003; the builder re-read the spec and
   accepted this reading, SPEC_NOTES N57);
-* the same gap on the `interception` kind: a run-bound interception without a
-  registered `aeeMethod`, cited only by an `artifact` caught row, passed the
-  universal check (found by the builder while checking patch 0003; closed in
-  the commit after the series, with three tests);
+* the same shape on the `interception` kind: a run-bound interception without
+  a registered `aeeMethod`, cited only by an `artifact` caught row, passed the
+  universal check (found by the builder while checking patch 0003; refused in
+  the commit after the series, with three tests).  Unlike the other three
+  kinds, the text states no `aeeMethod` constraint inside the `interception`
+  kind, so this one is a reading (SPEC_NOTES N57);
 * three mutation survivors classified as equivalent that were not (base64
   `validate`, Ed25519 `s >= L`, `all` over attackId types), now killed or
   re-classified with a measured reason (patches 0004, 0006);
@@ -212,7 +218,7 @@ builder's session transcript).  Earlier, separate sessions in the same
 environment had (24 September 2026) listed the file names at the top of
 `vectors/` and read the first 48 lines of `vectors/indeterminate/INDEX.md`,
 and (26-30 September) cloned or installed agent-evidence-vectors 0.13.0,
-used only to run its receipt-signature family; no statement of this
+used only to run or read its receipt-signature family; no statement of this
 predicate's test set, no changelog and no verifier of this predicate were
 opened.  That exposure is
 declared in our reply on finos/ai-governance-framework#337.

@@ -3,7 +3,7 @@
 `tests/mutate.py` mutates the sources one site at a time (drop a
 `rep.fail(...)` / `problems.append(...)`, flip a comparison, `and`/`or`,
 drop a `not`, swap `any`/`all`, bump a small constant, flip a boolean) and
-runs the whole suite (`tests/test_verifier.py` + `tests/test_units.py`) in an
+runs the whole suite (every `tests/test_*.py` file) in an
 isolated copy of the repository.  A mutant that passes the suite has
 survived.  Re-measured 2026-10-08 UTC after the review fixes and the
 builder's follow-up fix (interception without `aeeMethod`), CPython 3.11.2,
