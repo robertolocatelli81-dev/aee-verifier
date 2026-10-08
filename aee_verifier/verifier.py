@@ -349,8 +349,8 @@ class Verifier:
             if info["basis"] == "substrate":
                 if refs is None or refs == []:
                     rep.fail("substrate-row-no-refs", "attackResults[%d] is basis: substrate and MUST carry a non-empty observationRefs" % i)
-                if info["fail_closed"]:
-                    rep.fail("substrate-row-fail-closed", "attackResults[%d] is basis: substrate with a fail-closed containmentObserved/method/attribution; it cannot satisfy the class-match requirement" % i)
+                if info["class_fail_closed"]:
+                    rep.fail("substrate-row-fail-closed", "attackResults[%d] is basis: substrate with a fail-closed containmentObserved or method; it cannot satisfy the class-match requirement" % i)
 
         # ---- coverage partition and integrity --------------------------
         assessed_ids = self._verify_coverage(cov, env_info, rep)
@@ -586,6 +586,10 @@ class Verifier:
         is_caught = label_known and label in caught
         is_clean = label_known and not is_caught
         fail_closed = (not label_known) or basis not in BASIS_VOCAB or method not in METHOD_VOCAB or attribution not in ATTRIBUTION_VOCAB
+        # Spec, Coverage validity: a basis: substrate row whose containmentObserved,
+        # basis or method is fail-closed cannot class-match and is invalid.  An
+        # out-of-vocabulary attribution only forces result to fail (see SPEC_NOTES).
+        class_fail_closed = (not label_known) or method not in METHOD_VOCAB
         refs = row.get("observationRefs")
         return {
             "attackId": row.get("attackId"),
@@ -596,6 +600,7 @@ class Verifier:
             "caught": is_caught,
             "clean": is_clean,
             "fail_closed": fail_closed,
+            "class_fail_closed": class_fail_closed,
             "refs": refs if isinstance(refs, list) else None,
         }
 
@@ -871,7 +876,7 @@ class Verifier:
 
         # per substrate row
         for i, info in enumerate(row_infos):
-            if info["basis"] != "substrate" or info["fail_closed"]:
+            if info["basis"] != "substrate" or info["class_fail_closed"]:
                 continue
             recs = resolved(info)
             if not recs:

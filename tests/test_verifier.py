@@ -250,6 +250,14 @@ class TestStatementShell(Base):
         env = {"payloadType": "application/json", "payload": base64.b64encode(B.dumps(st)).decode(), "signatures": [{"sig": "AA=="}]}
         self.assertReject(json.dumps(env).encode(), "envelope-payload-type")
 
+    def test_envelope_payload_not_base64(self):
+        env = {"payloadType": "application/vnd.in-toto+json", "payload": "***", "signatures": [{"sig": "AA=="}]}
+        self.assertReject(json.dumps(env).encode(), "envelope-payload-not-base64")
+
+    def test_envelope_payload_not_object(self):
+        env = {"payloadType": "application/vnd.in-toto+json", "payload": base64.b64encode(b"[1]").decode(), "signatures": [{"sig": "AA=="}]}
+        self.assertReject(json.dumps(env).encode(), "statement-not-object")
+
     def test_envelope_inner_strictness(self):
         st, _ = B.scenario_pass()
         inner = B.dumps(st)[:-1] + b',"_type":"https://in-toto.io/Statement/v1"}'
@@ -329,6 +337,15 @@ class TestEnvironment(Base):
             del env[member]
             self.assertReject(st, code)
 
+    def test_environment_members_required_without_substrate_rows(self):
+        for member, code in (("networkPosture", "network-posture-malformed"), ("corpus", "corpus-malformed"),
+                             ("observationVocabulary", "vocabulary-malformed"), ("substrate", "substrate-digest-malformed"),
+                             ("catchPolicy", "catch-policy-digest-malformed")):
+            st, _ = B.scenario_artifact_only()
+            del st["predicate"]["observationEnvironment"][member]
+            rep = self.assertReject(st, code)
+            self.assertNotIn("run-binding-not-derivable", rep.code_set())
+
     def test_network_posture_vocabulary(self):
         for bad in ("SINKHOLE", "open", "", 3, None):
             st, _ = B.scenario_pass()
@@ -391,6 +408,8 @@ class TestEnvironment(Base):
             {"NOT-AN-ATTACK": [B.COMMIT_1]},
             {"CO-EXFIL-1": []},
             {"CO-EXFIL-1": [B.COMMIT_1.upper()]},
+            {"CO-EXFIL-1": sorted([B.COMMIT_1, "zz" * 32])},
+            {"CO-EXFIL-1": sorted([B.COMMIT_1, B.COMMIT_2.upper()])},
             {"CO-EXFIL-1": [B.COMMIT_1, B.COMMIT_1]},
             {"CO-EXFIL-1": sorted([B.COMMIT_1, B.COMMIT_2])[::-1]},
             {"CO-EXFIL-1": "not-an-array"},
@@ -425,6 +444,8 @@ class TestEnvironment(Base):
             lambda v: v.__setitem__("labels", v["labels"] + [v["labels"][0]]),
             lambda v: v.__setitem__("caught", ["not_a_label"]),
             lambda v: v.__setitem__("labels", v["labels"] + ["\U0001F600"]),
+            lambda v: v.__setitem__("labels", v["labels"] + ["zz_mixed_\U0001F600_bmp"]),
+            lambda v: v.__setitem__("labels", v["labels"][:2] + v["labels"][2:][::-1]),
             lambda v: v.__setitem__("labels", v["labels"] + [1]),
             lambda v: v.__setitem__("labels", "egress_captured"),
             lambda v: v.pop("caught"),
@@ -433,6 +454,19 @@ class TestEnvironment(Base):
             mutate(s2["predicate"]["observationEnvironment"]["observationVocabulary"])
             self.assertReject(s2, "vocabulary-malformed")
         self.assertTrue(voc)
+
+    def test_vocabulary_caught_may_equal_labels(self):
+        st, _ = B.build(labels=["egress_captured", "file_written"], caught=["egress_captured", "file_written"],
+                        records=[{"name": "int1", "kind": "interception"}, {"name": "int2", "kind": "interception", "commitment": [B.COMMIT_2]},
+                                 {"name": "int3", "kind": "interception", "commitment": [B.COMMIT_FS]}, {"name": "seal", "kind": "sealed"}],
+                        rows=[{"attackId": "CO-EXFIL-1", "containmentObserved": "egress_captured", "basis": "substrate", "method": "intercepted",
+                               "attribution": "pinned", "actualLayer": "policy.egress_sinkhole", "refs": ["int1"]},
+                              {"attackId": "CO-EXFIL-2", "containmentObserved": "egress_captured", "basis": "substrate", "method": "intercepted",
+                               "attribution": "paired", "actualLayer": "none", "refs": ["int2"]},
+                              {"attackId": "FS-WRITE-1", "containmentObserved": "file_written", "basis": "substrate", "method": "intercepted",
+                               "attribution": "pinned", "actualLayer": "policy.fs_deny", "refs": ["int3"]}],
+                        observedAttacks=["CO-EXFIL-1", "CO-EXFIL-2", "FS-WRITE-1"])
+        self.assertAccept(st, "fail", KEYS, tiers=["attested"] * 3)
 
     def test_vocabulary_digest_mismatch(self):
         st, _ = B.scenario_pass()
@@ -459,7 +493,9 @@ class TestEnvironment(Base):
     def test_run_entropy(self):
         st, _ = B.scenario_pass()
         del st["predicate"]["observationEnvironment"]["runEntropy"]
-        self.assertReject(st, "run-entropy-missing")
+        rep = self.assertReject(st, "run-entropy-missing")
+        self.assertIn("run-binding-not-derivable", rep.code_set())
+        self.assertNotIn("run-binding-mismatch", rep.code_set())
         st, _ = B.scenario_pass()
         st["predicate"]["observationEnvironment"]["runEntropy"]["digest"]["sha256"] = "x" * 64
         self.assertReject(st, "run-entropy-digest-malformed")
@@ -481,6 +517,11 @@ class TestCoverage(Base):
     def test_partition_class_in_none(self):
         st, _ = B.build(assessedClasses=["CO"])  # FS nowhere, but FS row present
         self.assertReject(st, "coverage-partition-violation")
+        # FS nowhere and no FS row: the partition rule is the only thing that catches it
+        st, _ = B.build(assessedClasses=["CO"], rows=B.DEFAULT["rows"][:2],
+                        records=[r for r in B.DEFAULT["records"] if r["name"] != "exam"])
+        rep = self.assertReject(st, "coverage-partition-violation")
+        self.assertEqual(rep.code_set(), ["coverage-partition-violation"])
 
     def test_partition_duplicate_assessed(self):
         st, _ = B.build(assessedClasses=["CO", "FS", "CO"])
@@ -589,7 +630,7 @@ class TestRows(Base):
         self.assertReject(st, "substrate-row-no-refs")
 
     def test_substrate_row_fail_closed_is_invalid(self):
-        for field, value in (("containmentObserved", "unknown_label"), ("method", "guessed"), ("attribution", "firm"), ("method", None)):
+        for field, value in (("containmentObserved", "unknown_label"), ("containmentObserved", None), ("method", "guessed"), ("method", None)):
             st, _ = B.scenario_pass()
             if value is None:
                 del st["predicate"]["attackResults"][0][field]
@@ -597,6 +638,19 @@ class TestRows(Base):
                 st["predicate"]["attackResults"][0][field] = value
             st["predicate"]["result"] = "fail"
             self.assertReject(st, "substrate-row-fail-closed")
+
+    def test_substrate_row_bad_attribution_only_forces_fail(self):
+        """Coverage validity names containmentObserved, basis and method; attribution's fail-closed arm is the result alone."""
+        for value in ("firm", None, 3):
+            st, _ = B.scenario_pass()
+            if value is None:
+                del st["predicate"]["attackResults"][0]["attribution"]
+            else:
+                st["predicate"]["attackResults"][0]["attribution"] = value
+            st["predicate"]["result"] = "fail"
+            self.assertAccept(st, "fail", KEYS, tiers=["attested"] * 3)
+            st["predicate"]["result"] = "pass"
+            self.assertReject(st, "result-mismatch")
 
     def test_artifact_row_fail_closed_forces_fail(self):
         for field, value in (("containmentObserved", "unknown_label"), ("containmentObserved", None), ("basis", "inferred"),
@@ -676,7 +730,9 @@ class TestRecordsStructure(Base):
         for mutate in (lambda r: r.__setitem__("payload", "***"), lambda r: r.__setitem__("payload", 5),
                        lambda r: r.pop("payload"), lambda r: r.pop("payloadType"), lambda r: r.__setitem__("payloadType", 1),
                        lambda r: r.__setitem__("signatures", []), lambda r: r.pop("signatures"),
-                       lambda r: r.__setitem__("signatures", [{"keyid": "k"}])):
+                       lambda r: r.__setitem__("signatures", [{"keyid": "k"}]),
+                       lambda r: r.__setitem__("signatures", r["signatures"] + [{"keyid": "k"}]),
+                       lambda r: r.__setitem__("signatures", r["signatures"] + [{"sig": 5}])):
             s2 = copy.deepcopy(st)
             mutate(s2["predicate"]["observationRecords"][0])
             self.assertReject(s2, "observation-records-malformed")
@@ -794,9 +850,11 @@ class TestRecordPayloads(Base):
         self.assertReject(st, "referenced-record-unparseable")
 
     def test_payload_non_bmp_member_name(self):
-        st, _ = B.build(records=[{"name": "arm", "kind": "arming", "extra": {"\U0001F600": 1}}, {"name": "seal", "kind": "sealed"}],
-                        rows=self._pass_rows(), observedAttacks=[])
-        self.assertReject(st, "referenced-record-unparseable")
+        for name in ("\U0001F600", "mixed\U0001F600name", "nested"):
+            extra = {name: 1} if name != "nested" else {"vendor": {"deep\U00010000": 1}}
+            st, _ = B.build(records=[{"name": "arm", "kind": "arming", "extra": extra}, {"name": "seal", "kind": "sealed"}],
+                            rows=self._pass_rows(), observedAttacks=[])
+            self.assertReject(st, "referenced-record-unparseable")
 
     def test_payload_non_bmp_string_value_is_fine(self):
         st, _ = B.build(records=[{"name": "arm", "kind": "arming", "extra": {"note": "\U0001F600"}}, {"name": "seal", "kind": "sealed"}],
@@ -840,7 +898,8 @@ class TestRecordPayloads(Base):
         self.assertAccept(st, "pass")
 
     def test_interception_commitment_rules(self):
-        for bad in ([], [B.COMMIT_1.upper()], [B.COMMIT_1, B.COMMIT_1], sorted([B.COMMIT_1, B.COMMIT_2])[::-1], "x", None):
+        for bad in ([], [B.COMMIT_1.upper()], [B.COMMIT_1, B.COMMIT_1], sorted([B.COMMIT_1, B.COMMIT_2])[::-1], "x", None,
+                    sorted([B.COMMIT_1, "zz" * 32]), sorted([B.COMMIT_1, 7], key=str)):
             recs = copy.deepcopy(B.DEFAULT["records"])
             if bad is None:
                 recs[0]["drop"] = ["aeePayloadCommitment"]
@@ -1064,6 +1123,15 @@ class TestCoverageValidity(Base):
         st["predicate"]["result"] = "fail"
         self.assertReject(st, "clean-row-references-interception")
 
+    def test_artifact_row_references_are_outside_coverage_validity(self):
+        """Coverage validity is stated over basis: substrate rows; an artifact caught row may cite an unbound interception."""
+        recs = copy.deepcopy(B.DEFAULT["records"])
+        recs[0]["binding"] = B.h("some-other-run")
+        rows = copy.deepcopy(B.DEFAULT["rows"])
+        rows[0].update(basis="artifact", attribution="paired")
+        st, _ = B.build(records=recs, rows=rows)
+        self.assertAccept(st, "fail", KEYS, tiers=["declared", "attested", "attested"])
+
     def test_class_match_caught_intercepted(self):
         rows = copy.deepcopy(B.DEFAULT["rows"])
         rows[0]["refs"] = ["arm"]  # caught row pointing at arming only
@@ -1071,6 +1139,8 @@ class TestCoverageValidity(Base):
         st, _ = B.build(rows=rows)
         rep = self.assertReject(st, "class-match-failed")
         self.assertIn("interception-unresolved", rep.code_set())
+        self.assertNotIn("row-resolves-unrecognised-kind", rep.code_set())
+        self.assertNotIn("row-resolves-non-covering-kind", rep.code_set())
 
     def test_class_match_reconstructed_needs_examination(self):
         rows = copy.deepcopy(B.DEFAULT["rows"])
@@ -1131,6 +1201,16 @@ class TestCoverageValidity(Base):
         recs[0]["method"] = "reconstructed"  # interception signed reconstructed
         st, _ = B.build(records=recs)
         self.assertReject(st, "method-cap-violation")
+        # one live and one reconstructed interception: the weakest wins
+        recs = copy.deepcopy(B.DEFAULT["records"]) + [{"name": "int2", "kind": "interception", "method": "reconstructed", "commitment": [B.COMMIT_1]}]
+        rows = copy.deepcopy(B.DEFAULT["rows"])
+        rows[0]["refs"] = ["int1", "int2"]
+        st, _ = B.build(records=recs, rows=rows)
+        rep = self.assertReject(st, "method-cap-violation")
+        self.assertEqual(rep.code_set(), ["method-cap-violation"])
+        # a reconstructed caught row may cite a reconstructed interception beside its examination
+        recs = copy.deepcopy(B.DEFAULT["records"])
+        recs[0]["method"] = "reconstructed"
         rows = copy.deepcopy(B.DEFAULT["rows"])
         rows[0].update(method="reconstructed", refs=["int1", "exam"])
         st, _ = B.build(records=recs, rows=rows)

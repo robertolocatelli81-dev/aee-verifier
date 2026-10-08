@@ -133,9 +133,9 @@ def _serialize(value, out: list) -> None:
     elif isinstance(value, dict):
         out.append("{")
         first = True
+        if not all(isinstance(k, str) for k in value):
+            raise JCSError("object member names must be strings")
         for name in sorted(value.keys(), key=utf16_key):
-            if not isinstance(name, str):
-                raise JCSError("object member names must be strings")
             if not first:
                 out.append(",")
             first = False
