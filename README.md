@@ -145,7 +145,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 210 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 213 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -157,34 +157,49 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   positive documents, RFC 3339 calendar rules, RFC 8032 vectors and
   malformed signatures / point encodings (with `cryptography` as an optional
   independent oracle when installed), key-policy loading.
-* `tests/test_review_fixes.py` (21 tests): the defects found by the review
+* `tests/test_review_fixes.py` (24 tests): the defects found by the review
   before posting (below), each test failing on the first build or killing a
   mutant the first build's suite let survive.
 * Mutation testing (`tests/mutate.py`, measured 2026-10-08 on CPython 3.11.2
-  after the review fixes): 861 mutants, 817 killed, 44 survived; every
+  after the review fixes and the follow-up fix): 863 mutants, 819 killed, 44
+  survived; every
   survivor is classified in `tests/MUTATION.md` (equivalent or
   verdict-equivalent: message text, short-circuit flags, key-ordering,
   constants whose change is masked by a later step).
 
 ## Review before posting
 
-An independent review of the first build (`fea61aa`) found, and these commits
-correct:
+An independent review of the first build (`fea61aa`, Claude Opus 5.5 as a
+separate instance, working from the same permitted material only) found the
+defects below; commits `2088364`..`aaaf63b` apply its six patches and the
+commit after them adds one more case found while checking patch 0003.  The
+first build is kept in history; nothing was rewritten.
 
 * three inputs that crashed the verifier (an integer token of more than 4300
   digits, a manifest class that is not an array of strings, an
   `expectedPayloads` entry holding a non-string) and a reject reason that
   could not be printed under a non-UTF-8 stdout; each ended with exit status 1
-  and no JSON line;
-* `$` and `\d` in the hex and timestamp patterns: a lowercase-64-hex value
-  followed by a newline, and timestamps with a trailing newline or non-ASCII
-  digits, were accepted;
+  and no JSON line (patches 0001, 0005);
+* `$` and `\d` in the hex, timestamp and base64 patterns: a lowercase-64-hex
+  value followed by a newline, and timestamps with a trailing newline or
+  non-ASCII digits, were accepted (patch 0002);
 * the universal kind check skipped a run-bound `arming` / `sealed` /
-  `examination` record whose `aeeMethod` was missing or unregistered
-  (SPEC_NOTES N31);
-* three mutation survivors classified as equivalent that were not, and
-  documentation counts (condition codes, sources).
-
+  `examination` record whose `aeeMethod` was missing or unregistered, so a
+  seal reporting its moat down was refused with `aeeMethod: intercepted` and
+  accepted without the member (patch 0003; the builder re-read the spec and
+  accepted this reading, SPEC_NOTES N57);
+* the same gap on the `interception` kind: a run-bound interception without a
+  registered `aeeMethod`, cited only by an `artifact` caught row, passed the
+  universal check (found by the builder while checking patch 0003; closed in
+  the commit after the series, with three tests);
+* three mutation survivors classified as equivalent that were not (base64
+  `validate`, Ed25519 `s >= L`, `all` over attackId types), now killed or
+  re-classified with a measured reason (patches 0004, 0006);
+* documentation: condition-code count (73 -> 75), two RFCs listed as
+  downloaded that were cited from prior knowledge, the `python3 -m` form
+  working only from the repository root, `verdict: "error"` on exit 2, one
+  unmapped MUST NOT in REQUIREMENTS, and the exposure sentence below (patch
+  0006).
 
 ## Tools and model
 
@@ -194,10 +209,12 @@ responsible for it; a separate Claude Opus 5.5 instance reviews the build
 before it is posted.  Neither agent opened the test set, its changelog or
 another implementation while building or reviewing (checked against the
 builder's session transcript).  Earlier, separate sessions in the same
-environment had listed the file names at the top of `vectors/` and read the
-first 48 lines of `vectors/indeterminate/INDEX.md`, and had cloned or
-installed agent-evidence-vectors 0.13.0 to run another family; no statement of
-this predicate's test set and no changelog were opened.  That exposure is
+environment had (24 September 2026) listed the file names at the top of
+`vectors/` and read the first 48 lines of `vectors/indeterminate/INDEX.md`,
+and (26-30 September) cloned or installed agent-evidence-vectors 0.13.0,
+used only to run its receipt-signature family; no statement of this
+predicate's test set, no changelog and no verifier of this predicate were
+opened.  That exposure is
 declared in our reply on finos/ai-governance-framework#337.
 
 ## License

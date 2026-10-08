@@ -725,6 +725,12 @@ class Verifier:
                 problems.append("%s names an attack identifier the manifest does not declare" % name)
 
         if kind == "interception":
+            if rec.method is None:
+                # the only kind whose aeeMethod is free still has to carry one of
+                # the two registered values (L1341-L1342); without this line a
+                # bound interception cited only by an artifact caught row would
+                # pass the universal check with no aeeMethod at all.
+                problems.append("aeeMethod must be intercepted or reconstructed")
             pc = p.get("aeePayloadCommitment")
             if not (isinstance(pc, list) and pc and sorted_unique_strings(pc) and all(is_hex64(x) for x in pc)):
                 problems.append("aeePayloadCommitment must be a non-empty, sorted, duplicate-free array of lowercase 64-hex values")

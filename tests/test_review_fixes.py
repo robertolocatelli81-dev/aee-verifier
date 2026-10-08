@@ -207,6 +207,31 @@ class TestUniversalKindCheckReadsAeeMethod(unittest.TestCase):
         self.assertIn("observed-set-mismatch", got)
 
 
+class TestInterceptionWithoutMethodReachedByUniversalCheck(unittest.TestCase):
+    """L595-L608 over the interception kind, L2232-L2233: a bound interception
+    cited only by an artifact caught row escapes the per-row checks; the
+    universal check must still refuse one whose aeeMethod is missing or
+    unregistered (L1341-L1342).  Found while reviewing patch 0003."""
+
+    def build(self, spec):
+        import copy
+        recs = copy.deepcopy(B.DEFAULT["records"])
+        recs[0].update(spec)
+        rows = copy.deepcopy(B.DEFAULT["rows"])
+        rows[0].update(basis="artifact", attribution="paired")
+        st, _ = B.build(records=recs, rows=rows)
+        return report(st).code_set()
+
+    def test_control_accepts(self):
+        self.assertEqual(self.build({}), [])
+
+    def test_missing_method(self):
+        self.assertIn("interception-record-invalid", self.build({"drop": ["aeeMethod"]}))
+
+    def test_unregistered_method(self):
+        self.assertIn("interception-record-invalid", self.build({"extra": {"aeeMethod": "bogus"}}))
+
+
 class TestEd25519ScalarRange(unittest.TestCase):
     def test_s_equal_to_L_is_rejected_even_where_it_would_verify(self):
         # RFC 8032 5.1.7: S must be in range 0 <= S < L.  With the identity as
