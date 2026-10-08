@@ -207,5 +207,17 @@ class TestUniversalKindCheckReadsAeeMethod(unittest.TestCase):
         self.assertIn("observed-set-mismatch", got)
 
 
+class TestEd25519ScalarRange(unittest.TestCase):
+    def test_s_equal_to_L_is_rejected_even_where_it_would_verify(self):
+        # RFC 8032 5.1.7: S must be in range 0 <= S < L.  With the identity as
+        # public key and R, [S]B = R + [k]A holds for S = 0 and for S = L, so
+        # only the range check separates them (tests/MUTATION.md listed the
+        # `s >= L` -> `s > L` mutation as unconstructible; it is not).
+        from aee_verifier import ed25519
+        ident = bytes([1]) + bytes(31)
+        self.assertTrue(ed25519.verify(ident, b"m", ident + bytes(32)))      # S = 0: in range, verifies
+        self.assertFalse(ed25519.verify(ident, b"m", ident + ed25519.L.to_bytes(32, "little")))
+
+
 if __name__ == "__main__":
     unittest.main()
