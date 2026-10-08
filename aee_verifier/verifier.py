@@ -463,7 +463,10 @@ class Verifier:
             else:
                 ids = self._verify_manifest(manifest, rep)
                 info["attack_ids"] = ids
-                info["classes"] = manifest.get("classes") if isinstance(manifest.get("classes"), dict) else None
+                # The class map feeds coverage only when it is well formed: a
+                # malformed manifest is already reported, and reading its
+                # arrays (a number, a non-string identifier) would crash.
+                info["classes"] = manifest.get("classes") if ids is not None else None
                 info["expected"] = manifest.get("expectedPayloads") if isinstance(manifest.get("expectedPayloads"), dict) else None
                 if cd is not None:
                     recomputed = sha256_hex(canonicalize(manifest))
@@ -831,7 +834,8 @@ class Verifier:
                 else:
                     for rec in inter:
                         pc = rec.parsed.get("aeePayloadCommitment") if rec.parsed else None
-                        if not (isinstance(pc, list) and set(x for x in pc if isinstance(x, str)) & set(entry)):
+                        declared = set(x for x in entry if isinstance(x, str))  # a malformed entry is reported elsewhere
+                        if not (isinstance(pc, list) and set(x for x in pc if isinstance(x, str)) & declared):
                             rep.fail("pinned-attribution-unsupported", "attackResults[%d] is pinned but interception record %d carries no commitment value the corpus declared for %r" % (i, rec.index, aid))
 
         if not has_substrate_row:

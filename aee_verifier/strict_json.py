@@ -273,6 +273,11 @@ class _Parser:
         token = s[start:i]
         self.i = i
         if is_int:
+            # 2**53 has 16 digits, so a token of 17 or more digits is out of
+            # range; deciding on the length first also keeps int() away from
+            # CPython's 4300-digit conversion limit (ValueError, not ours).
+            if len(token) - (1 if token[0] == "-" else 0) > 16:
+                raise self._err("integer", "integer magnitude at or above 2**53")
             value = int(token)
             if abs(value) >= SAFE_INT_LIMIT:
                 raise self._err("integer", "integer magnitude at or above 2**53")
