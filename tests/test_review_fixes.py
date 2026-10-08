@@ -102,5 +102,61 @@ class TestNoCrash(unittest.TestCase):
         self.assertCliReject(B.dumps(st), "expected-payloads-malformed")
 
 
+class TestAnchoredSyntax(unittest.TestCase):
+    """Python's ``$`` also matches before a final newline and ``\\d`` matches
+    every Unicode decimal digit; the lowercase-64-hex and timestamp rules
+    are ASCII and exact."""
+
+    def assertRejectCode(self, st, code):
+        rep = report(st)
+        self.assertIn(code, rep.code_set(), rep.codes)
+
+    def test_hex64_with_trailing_newline(self):
+        # L213-L218: digests "already lowercase 64-hex"; L819-L820, L1454-L1458, L1613.
+        H = B.h
+        cases = [
+            (dict(subjectDigest=H("artifact") + "\n"), "subject-digest-malformed"),
+            (dict(substrateDigest=H("substrate-image") + "\n"), "substrate-digest-malformed"),
+            (dict(catchPolicyDigest=H("catch-policy") + "\n"), "catch-policy-digest-malformed"),
+            (dict(postureDigest=H("posture-config") + "\n"), "network-posture-digest-malformed"),
+            (dict(runEntropyDigest=H("run-entropy") + "\n"), "run-entropy-digest-malformed"),
+            (dict(expectedPayloads={"CO-EXFIL-1": [B.COMMIT_1 + "\n"], "FS-WRITE-1": [B.COMMIT_FS]}),
+             "expected-payloads-malformed"),
+            (dict(records=[{"name": "int1", "kind": "interception", "commitment": [B.COMMIT_1 + "\n"]},
+                           {"name": "arm", "kind": "arming"}, {"name": "exam", "kind": "examination"},
+                           {"name": "seal", "kind": "sealed"}]), "interception-record-invalid"),
+            (dict(armExtra={"aeeRunSeq": 2, "aeePrevRunBinding": "ab" * 32 + "\n", "aeeChainScope": ["subject"]}),
+             "arming-record-invalid"),
+        ]
+        for kw, code in cases:
+            with self.subTest(code=code):
+                st, _ = B.build(**kw)
+                self.assertRejectCode(st, code)
+        # control: the same arming chain members without the newline are accepted
+        st, _ = B.build(armExtra={"aeeRunSeq": 2, "aeePrevRunBinding": "ab" * 32, "aeeChainScope": ["subject"]})
+        self.assertEqual(report(st).code_set(), [])
+
+    def test_timestamp_trailing_newline_and_unicode_digits(self):
+        # L1784-L1802: issuedAt / armedAt are RFC 3339 (ASCII DIGIT) in the pinned profile.
+        bad = ["2026-06-23T16:08:07Z\n", "\u0662\u0660\u0662\u0666-06-23T16:08:07Z",
+               "2026-06-23T16:08:07.\u0665Z", "2026-06-23T16:08:\uff10\uff17Z"]
+        for v in bad:
+            with self.subTest(issuedAt=v):
+                st, _ = B.build(issuedAt=v)
+                self.assertRejectCode(st, "issued-at-malformed")
+        for v in ["2026-06-23T16:00:00Z\n", "2026-06-23T16:00:00.\u0665Z"]:
+            with self.subTest(armedAt=v):
+                st, _ = B.build(armedAt=v)
+                self.assertRejectCode(st, "arming-record-invalid")
+
+    def test_base64_trailing_newline_after_padding(self):
+        # DSSE payload is base64; "<b64>=\n" is not. Before the fix only
+        # b64decode(validate=True) caught it (the regex admitted the newline).
+        from aee_verifier.verifier import decode_base64
+        for s in ("G620=\n", "G620==\n", "3pd==\n", "NPk_=\n"):
+            self.assertIsNone(decode_base64(s), s)
+        self.assertEqual(decode_base64("G620"), b"\x1b\xad\xb4")
+
+
 if __name__ == "__main__":
     unittest.main()

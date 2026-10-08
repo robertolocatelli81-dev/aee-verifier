@@ -52,7 +52,8 @@ KNOWN_RESERVED = {
     "aeeVersion",
 }
 
-_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+# \Z, not $: in Python ``$`` also matches before a final "\n".
+_HEX64 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def is_hex64(v: Any) -> bool:
@@ -83,9 +84,9 @@ def decode_base64(s: Any) -> Optional[bytes]:
     """DSSE: standard or URL-safe alphabet, padding optional; invalid -> None."""
     if not isinstance(s, str) or s == "":
         return None if not isinstance(s, str) else b""
-    if re.match(r"^[A-Za-z0-9+/]*={0,2}$", s):
+    if re.match(r"[A-Za-z0-9+/]*={0,2}\Z", s):
         alphabet = None
-    elif re.match(r"^[A-Za-z0-9_-]*={0,2}$", s):
+    elif re.match(r"[A-Za-z0-9_-]*={0,2}\Z", s):
         alphabet = b"-_"
     else:
         return None

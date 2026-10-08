@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import re
 
+# ASCII digits only ([0-9], not \d, which matches every Unicode decimal
+# digit) and \Z, not $ (which also matches before a final "\n").
 _RE = re.compile(
-    r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|\+00:00|-00:00)$"
+    r"([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2}):([0-9]{2}):([0-9]{2})(?:\.([0-9]+))?(Z|\+00:00|-00:00)\Z"
 )
 
 _DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
