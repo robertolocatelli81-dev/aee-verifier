@@ -291,5 +291,33 @@ class TestSealOfAnotherRun(unittest.TestCase):
         self.assertIn("sealed-record-missing", report(st).code_set())
 
 
+class TestIgnoredMembersAreReported20261010(unittest.TestCase):
+    """2026-10-10: an unrecognized member is ignored, as the in-toto parsing rules require (N10), and now REPORTED in `notes`
+    so the reader of the verdict sees what the verifier did not read. The verdict and the codes are unchanged."""
+
+    def _rep(self, st):
+        return Verifier(None).verify_bytes(B.dumps(st))
+
+    def test_statement_subject_and_predicate_members_are_named(self):
+        st, _ = B.scenario_pass()
+        base = self._rep(st)
+        self.assertEqual(base.to_json_line()["verdict"], "accept")
+        self.assertEqual([n for n in base.notes if "ignored unrecognized" in n], [])
+        st["x_unknown_2026"] = "x"; st["subject"][0]["y_unknown_2026"] = "x"; st["predicate"]["z_unknown_2026"] = "x"
+        rep = self._rep(st)
+        self.assertEqual(rep.to_json_line(), base.to_json_line())          # ignored: the verdict does not move
+        notes = [n for n in rep.notes if "ignored unrecognized" in n]
+        self.assertEqual(len(notes), 3)
+        self.assertTrue(any("statement member" in n and "x_unknown_2026" in n for n in notes))
+        self.assertTrue(any("subject[0] member" in n and "y_unknown_2026" in n for n in notes))
+        self.assertTrue(any("predicate member" in n and "z_unknown_2026" in n for n in notes))
+
+    def test_aee_members_keep_their_own_rule_and_are_not_reported_here(self):
+        st, _ = B.scenario_pass()
+        st["predicate"]["aeeUnknown2026"] = "x"            # predicate-level aee* members: ignored per L779-L781 (N10), not a note
+        rep = self._rep(st)
+        self.assertEqual(rep.to_json_line()["verdict"], "accept")
+        self.assertEqual([n for n in rep.notes if "ignored unrecognized" in n], [])
+
 if __name__ == "__main__":
     unittest.main()

@@ -47,6 +47,9 @@ Human-readable lines, then **one JSON object on the last line**:
   `unreadable-input`, on exit status 2).
 * `codes`: the conditions found (this verifier's own names, below); empty on accept.
 * `result`: the recomputed token (`fail` < `degraded` < `pass_indirect` < `pass`), `null` on reject.
+* Since 2026-10-10 the human-readable lines also NAME every statement, `subject[0]` or predicate member this verifier
+  did not read (`ignored unrecognized … member(s)`): the in-toto parsing rules say such members are ignored, and the
+  verdict does ignore them — the reader just sees it (SPEC_NOTES N59). Predicate-level `aee*` members keep L779–L781.
 * `tiers`: one of `declared` / `attested` / `unattested` per `attackResults` row, in order; `[]` on reject.
 * `primaryCode` (optional in the harness contract): the first condition found,
   except that an unmet sealed-record existence requirement is always primary
@@ -147,7 +150,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 213 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 215 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 

@@ -29,6 +29,11 @@ STATEMENT_TYPE = "https://in-toto.io/Statement/v1"
 PREDICATE_TYPE = "https://in-toto.io/attestation/adversarial-execution-evidence/v0.7"
 BINDING_VERSION = "2"
 IN_TOTO_ENVELOPE_TYPE = "application/vnd.in-toto+json"
+# Members this verifier reads (closed-list REPORT, 2026-10-10 — the verdict ignores the rest as the standards require)
+STATEMENT_MEMBERS = frozenset({"_type", "subject", "predicateType", "predicate"})
+RESOURCE_DESCRIPTOR_MEMBERS = frozenset({"name", "uri", "digest", "content", "downloadLocation", "mediaType", "annotations"})
+PREDICATE_MEMBERS = frozenset({"result", "issuedAt", "doesNotAssert", "observationEnvironment", "coverage", "attackResults", "observationRecords", "batchRoot", "evidenceTier"})
+
 
 RESULTS = ("fail", "degraded", "pass_indirect", "pass")  # ascending order
 BASIS_VOCAB = ("substrate", "artifact")
@@ -253,6 +258,13 @@ class Verifier:
 
     # --------------------------------------------------------------- phase 2
     def _verify_statement(self, st: dict, rep: Report) -> None:
+        # Unrecognized members are IGNORED, as the in-toto framework requires ("Consumers MUST ignore unrecognized
+        # fields", N10) — and since 2026-10-10 they are REPORTED in `notes`, so a reader of the verdict sees what the
+        # verifier did not read (verdict unchanged). Statement, subject[0] and non-`aee*` predicate members; `aee*`
+        # payload members keep N39.
+        unknown_st = sorted(k for k in st if k not in STATEMENT_MEMBERS)
+        if unknown_st:
+            rep.notes.append("ignored unrecognized statement member(s), per in-toto parsing rules: " + ", ".join(unknown_st)[:160])
         if st.get("_type") != STATEMENT_TYPE:
             rep.fail("statement-type-mismatch", "_type is not %s" % STATEMENT_TYPE)
         if st.get("predicateType") != PREDICATE_TYPE:
@@ -263,6 +275,10 @@ class Verifier:
             rep.fail("subject-count", "subject must contain exactly one entry")
         else:
             s0 = subject[0]
+            if isinstance(s0, dict):
+                unknown_s = sorted(k for k in s0 if k not in RESOURCE_DESCRIPTOR_MEMBERS)
+                if unknown_s:
+                    rep.notes.append("ignored unrecognized subject[0] member(s), per in-toto ResourceDescriptor rules: " + ", ".join(unknown_s)[:160])
             d = s0.get("digest") if isinstance(s0, dict) else None
             v = d.get("sha256") if isinstance(d, dict) else None
             if is_hex64(v):
@@ -279,6 +295,9 @@ class Verifier:
 
     # --------------------------------------------------------------- phase 3
     def _verify_predicate(self, pred: dict, subject_digest: Optional[str], rep: Report) -> None:
+        unknown_p = sorted(k for k in pred if k not in PREDICATE_MEMBERS and k not in RETIRED_SPELLINGS and not k.startswith("aee"))
+        if unknown_p:
+            rep.notes.append("ignored unrecognized predicate member(s), per the predicate's extensibility rule (L779-L781): " + ", ".join(unknown_p)[:160])
         for old in RETIRED_SPELLINGS:
             if old in pred:
                 rep.fail("retired-spelling", "member %r is a retired spelling with no alias" % old)
