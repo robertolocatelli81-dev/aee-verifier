@@ -5,20 +5,23 @@
 drop a `not`, swap `any`/`all`, bump a small constant, flip a boolean) and
 runs the whole suite (every `tests/test_*.py` file) in an
 isolated copy of the repository.  A mutant that passes the suite has
-survived.  Re-measured 2026-10-08 UTC after the review fixes and the
-builder's follow-up fix (interception without `aeeMethod`), CPython 3.11.2,
-8 jobs (the first build, fea61aa, measured 846 / 802 / 44; the reviewed
-series alone, 861 / 817 / 44).
+survived.  Re-measured 2026-10-21 UTC after the integer bound in
+`jcs.format_number` (3 new sites, all killed) on top of the ignored-member
+notes of SPEC_NOTES N59 (6 new sites in `verifier.py`, all killed),
+CPython 3.11.2, 3 jobs.
+Earlier: 2026-10-08 after the review fixes and the builder's follow-up fix
+(interception without `aeeMethod`), 863 / 819 / 44; the first build,
+fea61aa, 846 / 802 / 44; the reviewed series alone, 861 / 817 / 44.
 
 | Module | Sites | Killed | Survived |
 |--------|------:|-------:|---------:|
-| `verifier.py` | 542 | 517 | 25 |
+| `verifier.py` | 548 | 523 | 25 |
 | `strict_json.py` | 128 | 124 | 4 |
-| `jcs.py` | 47 | 42 | 5 |
+| `jcs.py` | 50 | 45 | 5 |
 | `timestamp.py` | 49 | 47 | 2 |
 | `ed25519.py` | 77 | 71 | 6 |
 | `cli.py` | 20 | 18 | 2 |
-| **Total** | **863** | **819** | **44** |
+| **Total** | **872** | **828** | **44** |
 
 Earlier rounds found real holes, since closed by added tests: `all`→`any`
 on mixed-validity arrays (expectedPayloads, aeePayloadCommitment, signatures,
@@ -47,21 +50,21 @@ Line numbers refer to the committed sources.
 
 | Line | Mutation | Class | Why it survives |
 |------|----------|-------|-----------------|
-| L72 | `<=` → `<` in `is_bmp` | equivalent | U+FFFF is a noncharacter, already rejected by the parser; no string reaching `is_bmp` contains it. |
-| L98 | `validate=True` → `False` | equivalent | The regexes above it are anchored with `\Z` and admit only the alphabet plus up to two `=`; `validate` has nothing left to reject (490,000 sampled strings agree). |
-| L140 | `reserved_ok = False` initial → `True` | equivalent | Overwritten whenever the payload parses; `usable` also requires `parsed is not None`. |
-| L492, L495, L524, L552 | `ok = False` → `True` | verdict-equivalent | Short-circuit flags inside the environment and coverage checks; the failing code is already recorded, continuing only adds codes. |
-| L569 | `counts.get(c, 0)` → `get(c, 1)` in the message `%d` | message-only | The condition is on the line above; this is the count printed in the message. |
-| L570 | `partition_ok = False` → `True` | verdict-equivalent | The partition violation is already recorded; continuing runs coverage integrity too. |
-| L639 | `ok = False` → `True` after a signatures defect | verdict-equivalent | `observation-records-malformed` already recorded; PAE bytes are still computable because payload/payloadType were valid in that branch. |
-| L677 | `and` → `or` in the kind-check guard | equivalent | A record without a parsed payload has `parse_problem` set and no kind, so no new record reaches `_check_kind` with `parsed` unset; the problems it records on other records are read only through `parse_problem is None` / `usable` gates. |
-| L687, L690 | `or` → `and` on `parse_problem` text | message-only | Selects which description is kept. |
-| L810 | `and` → `or` in `resolved()` range filter | equivalent | Out-of-range references set `refs` to `None` earlier, so every index reaching here is in range. |
-| L904 | `or` → `and` in a message | message-only | Fallback text of `referenced-record-unparseable`. |
-| L905, L908, L910 | `row_ok = False` → `True` | verdict-equivalent | The code is recorded before the flag; continuing runs class-match on the same row and adds codes. |
-| L915, L932 | `unknown` list / `elif unknown` with `or` | diagnostic-only | Only changes when the auxiliary `row-resolves-unrecognised-kind` code is added beside `class-match-failed`. |
-| L925 | `all` → `any` on seal-vs-arming posture | equivalent | Every bound arming record must already equal the pinned digest (universal check), so all resolved armings share one posture. |
-| L953 (×4) | key ordering by `keyid` hint | equivalent | The hint only orders the attempts; every pinned key is tried. |
+| L77 | `<=` → `<` in `is_bmp` | equivalent | U+FFFF is a noncharacter, already rejected by the parser; no string reaching `is_bmp` contains it. |
+| L103 | `validate=True` → `False` | equivalent | The regexes above it are anchored with `\Z` and admit only the alphabet plus up to two `=`; `validate` has nothing left to reject (490,000 sampled strings agree). |
+| L145 | `reserved_ok = False` initial → `True` | equivalent | Overwritten whenever the payload parses; `usable` also requires `parsed is not None`. |
+| L511, L514, L543, L571 | `ok = False` → `True` | verdict-equivalent | Short-circuit flags inside the environment and coverage checks; the failing code is already recorded, continuing only adds codes. |
+| L588 | `counts.get(c, 0)` → `get(c, 1)` in the message `%d` | message-only | The condition is on the line above; this is the count printed in the message. |
+| L589 | `partition_ok = False` → `True` | verdict-equivalent | The partition violation is already recorded; continuing runs coverage integrity too. |
+| L658 | `ok = False` → `True` after a signatures defect | verdict-equivalent | `observation-records-malformed` already recorded; PAE bytes are still computable because payload/payloadType were valid in that branch. |
+| L696 | `and` → `or` in the kind-check guard | equivalent | A record without a parsed payload has `parse_problem` set and no kind, so no new record reaches `_check_kind` with `parsed` unset; the problems it records on other records are read only through `parse_problem is None` / `usable` gates. |
+| L706, L709 | `or` → `and` on `parse_problem` text | message-only | Selects which description is kept. |
+| L829 | `and` → `or` in `resolved()` range filter | equivalent | Out-of-range references set `refs` to `None` earlier, so every index reaching here is in range. |
+| L923 | `or` → `and` in a message | message-only | Fallback text of `referenced-record-unparseable`. |
+| L924, L927, L929 | `row_ok = False` → `True` | verdict-equivalent | The code is recorded before the flag; continuing runs class-match on the same row and adds codes. |
+| L934, L951 | `unknown` list / `elif unknown` with `or` | diagnostic-only | Only changes when the auxiliary `row-resolves-unrecognised-kind` code is added beside `class-match-failed`. |
+| L944 | `all` → `any` on seal-vs-arming posture | equivalent | Every bound arming record must already equal the pinned digest (universal check), so all resolved armings share one posture. |
+| L972 (×4) | key ordering by `keyid` hint | equivalent | The hint only orders the attempts; every pinned key is tried. |
 
 ### `strict_json.py` (4)
 
@@ -74,9 +77,9 @@ Line numbers refer to the committed sources.
 
 | Line | Mutation | Class | Why it survives |
 |------|----------|-------|-----------------|
-| L94, L95 | `x < 0` → `<=` | equivalent | `x == 0` returns `"0"` on L92 before either line. |
-| L101 | `-6 < n <= 0` → `<= 1` | equivalent | `n == 1` is taken by the `0 < n <= 21` branch above. |
-| L105 (×2) | `e >= 0` → `e > 0`; `0` → `1` | equivalent | Exponent form is only reached with `n > 21` or `n <= -6`, so `e = n - 1` is never 0. |
+| L100, L101 | `x < 0` → `<=` | equivalent | `x == 0` returns `"0"` on L98 before either line. |
+| L107 | `-6 < n <= 0` → `<= 1` | equivalent | `n == 1` is taken by the `0 < n <= 21` branch above. |
+| L111 (×2) | `e >= 0` → `e > 0`; `0` → `1` | equivalent | Exponent form is only reached with `n > 21` or `n <= -6`, so `e = n - 1` is never 0. |
 
 ### `timestamp.py` (2)
 

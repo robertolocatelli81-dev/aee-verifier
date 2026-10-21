@@ -845,7 +845,10 @@ class TestRecordPayloads(Base):
         self.assertReject(st, "referenced-record-unparseable")
 
     def test_payload_big_integer(self):
-        st, _ = B.build(records=[{"name": "arm", "kind": "arming", "extra": {"counter": 2 ** 53}}, {"name": "seal", "kind": "sealed"}],
+        # canonicalize refuses 2**53 (not an I-JSON integer), so the payload bytes are patched after it
+        patch = (b'"counter":123456789', b'"counter":' + str(2 ** 53).encode())
+        st, _ = B.build(records=[{"name": "arm", "kind": "arming", "extra": {"counter": 123456789}, "patchPayload": patch},
+                                 {"name": "seal", "kind": "sealed"}],
                         rows=self._pass_rows(), observedAttacks=[])
         self.assertReject(st, "referenced-record-unparseable")
 

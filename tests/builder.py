@@ -190,6 +190,10 @@ def build(overrides=None, **kw):
     def envelope(name, p, spec):
         raw = spec.get("rawPayload")
         body = raw if raw is not None else canonicalize(p)
+        if spec.get("patchPayload"):                 # (old, new) byte replacement, for inputs canonicalize refuses
+            old, new = spec["patchPayload"]
+            assert body.count(old) == 1, old
+            body = body.replace(old, new)
         pt = spec.get("payloadType", cfg["payloadType"])
         pae = b"DSSEv1 " + str(len(pt.encode())).encode() + b" " + pt.encode() + b" " + str(len(body)).encode() + b" " + body
         seed = spec.get("seed", cfg["signerSeed"])

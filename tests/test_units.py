@@ -48,6 +48,14 @@ class TestJCS(unittest.TestCase):
         self.assertEqual(format_number(-7), "-7")
         self.assertEqual(format_number(9007199254740991), "9007199254740991")
 
+    def test_integers_outside_the_i_json_range_are_refused(self):
+        # str() of these is not ECMAScript's form: 2**53 + 1 is not a double, 10**21 prints as 1e+21
+        for bad in (2 ** 53, -(2 ** 53), 2 ** 53 + 1, 21772799756798912, 10 ** 21, -(10 ** 21), 10 ** 400):
+            with self.assertRaises(JCSError, msg=repr(bad)):
+                format_number(bad)
+        self.assertEqual(format_number(2 ** 53 - 1), "9007199254740991")
+        self.assertEqual(format_number(-(2 ** 53 - 1)), "-9007199254740991")
+
     def test_number_errors(self):
         for bad in (float("nan"), float("inf"), float("-inf"), True, False):
             with self.assertRaises(JCSError):

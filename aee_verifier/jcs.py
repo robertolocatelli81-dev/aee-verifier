@@ -11,7 +11,7 @@ str / int / float / bool / None).  Output is the canonical UTF-8 bytes.
   everything else emitted as-is;
 * numbers follow ECMAScript Number::toString (section 3.2.2.3), implemented
   on top of Python's shortest round-trip ``repr``; integers print as plain
-  decimal digits.  NaN and infinities raise.
+  decimal digits (magnitude 2**53 or more raises).  NaN and infinities raise.
 """
 
 from __future__ import annotations
@@ -86,6 +86,12 @@ def format_number(x) -> str:
     if isinstance(x, bool):
         raise JCSError("bool is not a number")
     if isinstance(x, int):
+        # RFC 8785 serializes numbers as IEEE 754 doubles (ECMAScript Number::toString). An integer of magnitude
+        # 2**53 or more may not be one (2**53 + 1 is not), and from 1e21 on ECMAScript writes exponent form, so
+        # str() would not be the JCS form. Same bound as strict_json.SAFE_INT_LIMIT (RFC 7493 2.2), which already
+        # refuses such integers on input: here they are refused when the caller builds the value directly.
+        if abs(x) >= 2 ** 53:
+            raise JCSError("integer magnitude at or above 2**53 (RFC 7493 2.2)")
         return str(x)
     if math.isnan(x) or math.isinf(x):
         raise JCSError("NaN and Infinity are not permitted")
