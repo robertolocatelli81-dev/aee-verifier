@@ -22,9 +22,19 @@ import os
 import sys
 from typing import List, Optional, Tuple
 
+from . import ed25519
 from .verifier import Verifier
 
 ENV_KEYS = "AEE_SUBSTRATE_KEYS"
+ENTRY_MEMBERS = ("keyid", "publicKeyHex")
+
+
+def _no_duplicate_members(pairs):
+    names = [k for k, _ in pairs]
+    dup = sorted(set(k for k in names if names.count(k) > 1))
+    if dup:                                # N60: RFC 7493 2.3, as strict_json does for the statement
+        raise ValueError("duplicate member(s) %s" % ", ".join(repr(k) for k in dup))
+    return dict(pairs)
 
 
 def load_key_policy(path: Optional[str], warn) -> Optional[List[Tuple[str, bytes]]]:
@@ -32,7 +42,7 @@ def load_key_policy(path: Optional[str], warn) -> Optional[List[Tuple[str, bytes
         return None
     try:
         with open(path, "rb") as fh:
-            doc = json.loads(fh.read().decode("utf-8"))
+            doc = json.loads(fh.read().decode("utf-8"), object_pairs_hook=_no_duplicate_members)
     except Exception as exc:  # fail-closed: no keys
         warn("%s=%r could not be read as JSON (%s); treating as no pinned key" % (ENV_KEYS, path, exc))
         return None
@@ -41,9 +51,16 @@ def load_key_policy(path: Optional[str], warn) -> Optional[List[Tuple[str, bytes
     if not isinstance(entries, list):
         warn("%s: no substrateObservationKeys array; treating as no pinned key" % ENV_KEYS)
         return None
-    for e in entries:
-        if not isinstance(e, dict):
+    top = sorted(k for k in doc if k != "substrateObservationKeys")
+    if top:                                # N60: named, never ignored in silence
+        warn("%s: member(s) %s not read" % (ENV_KEYS, ", ".join(repr(k) for k in top)))
+    for n, e in enumerate(entries):
+        if not isinstance(e, dict):        # N60: named, never skipped in silence
+            warn("%s: entry %d is not an object; skipped" % (ENV_KEYS, n))
             continue
+        extra = sorted(k for k in e if k not in ENTRY_MEMBERS)
+        if extra:
+            warn("%s: entry %d: member(s) %s not read" % (ENV_KEYS, n, ", ".join(repr(k) for k in extra)))
         hexkey = e.get("publicKeyHex")
         keyid = e.get("keyid")
         try:
@@ -53,7 +70,14 @@ def load_key_policy(path: Optional[str], warn) -> Optional[List[Tuple[str, bytes
         if len(raw) != 32:
             warn("%s: key %r is not a 32-byte (Ed25519) public key; skipped" % (ENV_KEYS, keyid))
             continue
-        keys.append((keyid if isinstance(keyid, str) else "", raw))
+        weak = ed25519.point_class(raw)
+        if weak != "prime-order":          # N60: a key of small or mixed order attests nothing
+            warn("%s: key %r is %s; skipped (SPEC_NOTES N60)" % (ENV_KEYS, keyid, weak))
+            continue
+        if not isinstance(keyid, str):
+            warn("%s: entry %d: keyid %r is not a string; key kept with no keyid hint" % (ENV_KEYS, n, keyid))
+            keyid = ""
+        keys.append((keyid, raw))
     return keys
 
 

@@ -91,6 +91,20 @@ def _equal(p, q) -> bool:
     return (X1 * Z2 - X2 * Z1) % P == 0 and (Y1 * Z2 - Y2 * Z1) % P == 0
 
 
+def point_class(public_key: bytes) -> str:
+    """Order class of a 32-byte public key (SPEC_NOTES N60): "not a point" (no canonical point decodes),
+    "a point of small order" ([8]A is the identity), "a point with a torsion component" ([L]A is not the
+    identity) or "prime-order"."""
+    A = _decode_point(public_key) if isinstance(public_key, bytes) else None
+    if A is None:
+        return "not a point"
+    if _equal(_mul(8, A), _NEUTRAL):
+        return "a point of small order"
+    if not _equal(_mul(L, A), _NEUTRAL):
+        return "a point with a torsion component"
+    return "prime-order"
+
+
 def verify(public_key: bytes, message: bytes, signature: bytes) -> bool:
     """Return True iff ``signature`` is a valid Ed25519 signature of
     ``message`` under ``public_key``.  Never raises on malformed input."""

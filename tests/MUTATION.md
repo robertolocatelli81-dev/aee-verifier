@@ -8,7 +8,8 @@ isolated copy of the repository.  A mutant that passes the suite has
 survived.  Re-measured 2026-10-21 UTC after the integer bound in
 `jcs.format_number` (3 new sites, all killed) on top of the ignored-member
 notes of SPEC_NOTES N59 (6 new sites in `verifier.py`, all killed),
-CPython 3.11.2, 3 jobs.
+CPython 3.11.2, 3 jobs; `cli.py` and `ed25519.py` re-measured 2026-11-14 after SPEC_NOTES N60
+(`ed25519.point_class`: 3 new sites; the key-policy loader: 6 new sites; all killed), CPython 3.11.2, 4 jobs.
 Earlier: 2026-10-08 after the review fixes and the builder's follow-up fix
 (interception without `aeeMethod`), 863 / 819 / 44; the first build,
 fea61aa, 846 / 802 / 44; the reviewed series alone, 861 / 817 / 44.
@@ -19,9 +20,9 @@ fea61aa, 846 / 802 / 44; the reviewed series alone, 861 / 817 / 44.
 | `strict_json.py` | 128 | 124 | 4 |
 | `jcs.py` | 50 | 45 | 5 |
 | `timestamp.py` | 49 | 47 | 2 |
-| `ed25519.py` | 77 | 71 | 6 |
-| `cli.py` | 20 | 18 | 2 |
-| **Total** | **872** | **828** | **44** |
+| `ed25519.py` | 80 | 74 | 6 |
+| `cli.py` | 26 | 24 | 2 |
+| **Total** | **881** | **837** | **44** |
 
 Earlier rounds found real holes, since closed by added tests: `all`→`any`
 on mixed-validity arrays (expectedPayloads, aeePayloadCommitment, signatures,
@@ -93,13 +94,13 @@ Line numbers refer to the committed sources.
 | Line | Mutation | Class | Why it survives |
 |------|----------|-------|-----------------|
 | L36 | `(P + 3) // 8` → `(P + 4) // 8` | equivalent | `P + 3 ≡ 0 (mod 8)`, so the floor division yields the same exponent. |
-| L115 | `return False` → `True` in the defensive `except` | equivalent | No input reaches the handler (all decoding paths return `None`/`False` explicitly). |
-| L130, L139 | `h[:32]` → `h[:33]` | equivalent | The extra byte sits above bit 255 and is cleared by the clamp that follows. |
-| L131, L140 | `(1 << 254) - 8` → `(2 << 254) - 8` | equivalent | The two masks differ only in bit 254, which the next line sets to 1 unconditionally. |
+| L129 | `return False` → `True` in the defensive `except` | equivalent | No input reaches the handler (all decoding paths return `None`/`False` explicitly). |
+| L144, L153 | `h[:32]` → `h[:33]` | equivalent | The extra byte sits above bit 255 and is cleared by the clamp that follows. |
+| L145, L154 | `(1 << 254) - 8` → `(2 << 254) - 8` | equivalent | The two masks differ only in bit 254, which the next line sets to 1 unconditionally. |
 
 ### `cli.py` (2)
 
 | Line | Mutation | Class | Why it survives |
 |------|----------|-------|-----------------|
-| L74 | `ensure_ascii=False` → `True` | equivalent | Produces an escaped but JSON-identical last line. |
-| L98 | `or "-"` → `and "-"` | message-only | Human-readable accept line only. |
+| L98 | `ensure_ascii=False` → `True` | equivalent | Produces an escaped but JSON-identical last line. |
+| L122 | `or "-"` → `and "-"` | message-only | Human-readable accept line only. |

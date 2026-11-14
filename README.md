@@ -150,7 +150,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 216 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 225 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -165,9 +165,15 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
 * `tests/test_review_fixes.py` (26 tests): the defects found by the review
   before posting (below), each test failing on the first build or killing a
   mutant the first build's suite let survive.
+* `tests/test_interop_20261114.py` (9 tests): external vectors copied unmodified into `tests/interop/` (pins,
+  licences and SHA-256 in `tests/interop/SOURCES.md`): Wycheproof `ed25519_test.json` (117 valid and 64 invalid cases
+  give Wycheproof's answer; the 29 "acceptable" small- or mixed-order keys verify as signatures and every one of the
+  30 flagged keys is skipped by the key policy, SPEC_NOTES N60) and the 10 JCS cases of gowebpki/jcs; key-policy
+  entries the loader does not use are each named in a warning (3000 generated entries), and a member name repeated
+  in the policy makes it unusable.
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
-  after the integer bound in `jcs.format_number`): 872 mutants, 828 killed, 44
-  survived; every
+  after the integer bound in `jcs.format_number`; `cli.py` and `ed25519.py` re-measured 2026-11-14 after N60):
+  881 mutants, 837 killed, 44 survived; every
   survivor is classified in `tests/MUTATION.md` (equivalent or
   verdict-equivalent: message text, short-circuit flags, key-ordering,
   constants whose change is masked by a later step).

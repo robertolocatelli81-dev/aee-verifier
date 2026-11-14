@@ -175,3 +175,23 @@ Measured on 0ea2708: a statement, a `subject[0]` and a predicate carrying a memb
 to `notes` (one line per object: statement, `subject[0]`, predicate), so the reader sees what was not read. The
 closed lists are `STATEMENT_MEMBERS`, `RESOURCE_DESCRIPTOR_MEMBERS`, `PREDICATE_MEMBERS` in `verifier.py`; `aee*`
 members keep N39 and are not noted here.
+
+**N60. Keys of small or mixed order in the key policy; entries the loader cannot use.** N47 reads a 32-byte
+`publicKeyHex` as a raw Ed25519 key and verifies with the cofactorless RFC 8032 equation, which RFC 8032 allows for
+any canonical point. Measured on 0d8cee1 (14 November 2026): the 29 "acceptable" cases of Wycheproof
+`testvectors_v1/ed25519_test.json` (8 `SmallOrderPublicKey`, 21 `MixedOrderPublicKey`) all verify, and with the
+identity point `01 00…00` in `AEE_SUBSTRATE_KEYS` a signature built with no secret (`R = [s]B`, `S = s`) verifies on any
+message, so every substrate row would be attested by anyone. Wycheproof's notes: "Implementations may reject them under
+a stricter public-key policy" (`SmallOrderPublicKey`), "implementations may reject them under a stricter subgroup
+policy" (`MixedOrderPublicKey`). **Choice:** the key policy is the consumer's own trust input, so the stricter policy is
+applied there: a key whose point has small order (`[8]A` is the identity) or a torsion component (`[L]A` is not the
+identity) is skipped with a warning, like a key of the wrong length (N47) — fail-closed, it attests nothing. Signature
+verification itself is unchanged (RFC 8032). A 32-byte `publicKeyHex` that decodes to no canonical point (RFC 8032
+5.1.3: `y >= p`, `x = 0` with the sign bit set, or no square root) is skipped with a warning too; until 0d8cee1 it was
+kept and verified nothing. Every other thing the loader does not use is warned about too: an entry that is not an
+object, an entry member other than `keyid` and `publicKeyHex`, and a top-level member other than
+`substrateObservationKeys` (named, the rest is still read). A member name repeated in one object, at any depth, makes
+the policy unusable (no pinned key, with a warning; RFC 7493 2.3, as `strict_json` does for the statement): until
+0d8cee1 the last one silently won, so a key could drop out without a word. A `keyid` that is not a string is warned
+about and the key is kept: the keyid is only an ordering hint (`verifier.py`, signature loop); until 0d8cee1 it
+silently became `""`.

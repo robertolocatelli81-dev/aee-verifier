@@ -323,7 +323,8 @@ class TestKeyPolicy(unittest.TestCase):
             {"keyid": "short", "publicKeyHex": pk[:62]}, {"keyid": "nothex", "publicKeyHex": "zz" * 32}, {"keyid": "none"},
             "not-a-dict", {"keyid": 5, "publicKeyHex": pk}]})
         self.assertEqual(keys, [("", bytes.fromhex(pk))])
-        self.assertEqual(len(warnings), 3)
+        # N60: the non-object entry and the non-string keyid are warned about too (until 0d8cee1: 3, both silent)
+        self.assertEqual(len(warnings), 5)
 
     def test_unusable_policy_is_no_policy(self):
         for doc in ("not json", {"keys": []}, [1, 2]):
