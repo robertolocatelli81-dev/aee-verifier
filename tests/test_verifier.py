@@ -971,6 +971,8 @@ class TestRecordPayloads(Base):
             ({"drop": ["aeeStillArmed"]}, "sealed-record-invalid"),
             ({"dropCount": 1}, "sealed-record-invalid"),
             ({"dropCount": 2, "dropBound": 1}, "sealed-record-invalid"),
+            ({"dropCount": -1, "dropBound": 5}, "sealed-record-invalid"),   # 15/11/2026: passed before (-1 <= 5)
+            ({"dropCount": -1}, "sealed-record-invalid"),
             ({"dropCount": 0, "dropBound": "5"}, "sealed-record-invalid"),
             ({"dropCount": 1.0}, "sealed-record-invalid"),
             ({"dropCount": False}, "sealed-record-invalid"),
