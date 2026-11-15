@@ -802,7 +802,7 @@ class Verifier:
                 problems.append("aeeDropCount must be an integer")
             elif dc < 0:
                 # a count of dropped observations below zero is not a count (reference aee/validity.go: dropCount < 0
-                # fails; corpus bad-901 / bad-1011): before 15/11/2026 -1 passed whenever a bound was declared
+                # fails; corpus bad-901 / bad-1011): before 15/11/2026 -1 passed under any declared bound of -1 or more
                 problems.append("aeeDropCount is negative: it counts dropped observations")
             else:
                 bound = p.get("aeeDropBound")

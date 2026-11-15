@@ -10,19 +10,22 @@ survived.  Re-measured 2026-10-21 UTC after the integer bound in
 notes of SPEC_NOTES N59 (6 new sites in `verifier.py`, all killed),
 CPython 3.11.2, 3 jobs; `cli.py` and `ed25519.py` re-measured 2026-11-14 after SPEC_NOTES N60
 (`ed25519.point_class`: 3 new sites; the key-policy loader: 6 new sites; all killed), CPython 3.11.2, 4 jobs.
+`verifier.py`: the 3 sites of the negative `aeeDropCount` rule (2026-11-15) measured on 2026-11-16, all killed
+(`<` → `<=`, `0` → `1`, the `problems.append` dropped); the other 548 sites are the code measured on 2026-10-21 and
+were not run again. Survivor line numbers below L800 are unchanged, above it they moved by 4.
 Earlier: 2026-10-08 after the review fixes and the builder's follow-up fix
 (interception without `aeeMethod`), 863 / 819 / 44; the first build,
 fea61aa, 846 / 802 / 44; the reviewed series alone, 861 / 817 / 44.
 
 | Module | Sites | Killed | Survived |
 |--------|------:|-------:|---------:|
-| `verifier.py` | 548 | 523 | 25 |
+| `verifier.py` | 551 | 526 | 25 |
 | `strict_json.py` | 128 | 124 | 4 |
 | `jcs.py` | 50 | 45 | 5 |
 | `timestamp.py` | 49 | 47 | 2 |
 | `ed25519.py` | 80 | 74 | 6 |
 | `cli.py` | 26 | 24 | 2 |
-| **Total** | **881** | **837** | **44** |
+| **Total** | **884** | **840** | **44** |
 
 Earlier rounds found real holes, since closed by added tests: `all`→`any`
 on mixed-validity arrays (expectedPayloads, aeePayloadCommitment, signatures,
@@ -60,12 +63,12 @@ Line numbers refer to the committed sources.
 | L658 | `ok = False` → `True` after a signatures defect | verdict-equivalent | `observation-records-malformed` already recorded; PAE bytes are still computable because payload/payloadType were valid in that branch. |
 | L696 | `and` → `or` in the kind-check guard | equivalent | A record without a parsed payload has `parse_problem` set and no kind, so no new record reaches `_check_kind` with `parsed` unset; the problems it records on other records are read only through `parse_problem is None` / `usable` gates. |
 | L706, L709 | `or` → `and` on `parse_problem` text | message-only | Selects which description is kept. |
-| L829 | `and` → `or` in `resolved()` range filter | equivalent | Out-of-range references set `refs` to `None` earlier, so every index reaching here is in range. |
-| L923 | `or` → `and` in a message | message-only | Fallback text of `referenced-record-unparseable`. |
-| L924, L927, L929 | `row_ok = False` → `True` | verdict-equivalent | The code is recorded before the flag; continuing runs class-match on the same row and adds codes. |
-| L934, L951 | `unknown` list / `elif unknown` with `or` | diagnostic-only | Only changes when the auxiliary `row-resolves-unrecognised-kind` code is added beside `class-match-failed`. |
-| L944 | `all` → `any` on seal-vs-arming posture | equivalent | Every bound arming record must already equal the pinned digest (universal check), so all resolved armings share one posture. |
-| L972 (×4) | key ordering by `keyid` hint | equivalent | The hint only orders the attempts; every pinned key is tried. |
+| L833 | `and` → `or` in `resolved()` range filter | equivalent | Out-of-range references set `refs` to `None` earlier, so every index reaching here is in range. |
+| L927 | `or` → `and` in a message | message-only | Fallback text of `referenced-record-unparseable`. |
+| L928, L931, L933 | `row_ok = False` → `True` | verdict-equivalent | The code is recorded before the flag; continuing runs class-match on the same row and adds codes. |
+| L938, L955 | `unknown` list / `elif unknown` with `or` | diagnostic-only | Only changes when the auxiliary `row-resolves-unrecognised-kind` code is added beside `class-match-failed`. |
+| L948 | `all` → `any` on seal-vs-arming posture | equivalent | Every bound arming record must already equal the pinned digest (universal check), so all resolved armings share one posture. |
+| L976 (×4) | key ordering by `keyid` hint | equivalent | The hint only orders the attempts; every pinned key is tried. |
 
 ### `strict_json.py` (4)
 
