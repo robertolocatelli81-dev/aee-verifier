@@ -36,7 +36,9 @@ PREDICATE_MEMBERS = frozenset({"result", "issuedAt", "doesNotAssert", "observati
 # Members of the objects inside the predicate (spec "Fields": observationEnvironment L783-L800 and L874-L878, coverage
 # L905-L909, attackResults L918-L928 and L953 observationSelectors; DSSE envelope and signature entries).  Since
 # 2026-11-20 any other member of these objects is named in `notes` too (SPEC_NOTES N59); the verdict still ignores it.
-# networkPosture is absent on purpose: every member it carries is bound by its canonical digest (N16), so all are read;
+# networkPosture is absent on purpose: every member it carries enters its canonical digest (N16), which the records of
+# the statement must carry; on a statement with no record nothing compares that digest and a member added there is
+# not named (measured on 68c6507 with the artifact-only scenario);
 # DigestSet objects take any algorithm name (in-toto ResourceDescriptor), so they are absent too.
 NESTED_MEMBERS = {
     "observationEnvironment": frozenset({"substrate", "corpus", "catchPolicy", "networkPosture", "observationVocabulary", "runEntropy"}),
@@ -52,6 +54,19 @@ NESTED_MEMBERS = {
     "observationRecords[]": frozenset({"payload", "payloadType", "signatures"}),
     "observationRecords[].signatures[]": frozenset({"keyid", "sig"}),
 }
+
+
+NOTE_LIST_CHARS = 160
+
+
+def listed(names) -> str:
+    """The names of a note, joined: all of them when they fit in NOTE_LIST_CHARS characters; otherwise the first
+    NOTE_LIST_CHARS characters followed by the count, so that a long name cannot hide the others without a word
+    (measured on 68c6507: a member named "!" + 200 letters hid every other unread member of the row)."""
+    text = ", ".join(names)
+    if len(text) <= NOTE_LIST_CHARS:
+        return text
+    return "%s ... (%d in all; list cut at %d characters)" % (text[:NOTE_LIST_CHARS], len(names), NOTE_LIST_CHARS)
 
 
 RESULTS = ("fail", "degraded", "pass_indirect", "pass")  # ascending order
@@ -197,14 +212,12 @@ class Report:
         """One note naming the members of ``objs`` (the objects found at ``where``) that NESTED_MEMBERS[where] does not
         list; silent when there are none."""
         known = NESTED_MEMBERS[where]
-        names: List[str] = []
+        names: Set[str] = set()         # a set: a list searched once per member cost time quadratic in the members
         for o in objs:
             if isinstance(o, dict):
-                for k in o:
-                    if k not in known and k not in names:
-                        names.append(k)
+                names.update(k for k in o if k not in known)
         if names:
-            self.notes.append("ignored unrecognized %s member(s), per in-toto parsing rules: %s" % (where, ", ".join(sorted(names))[:160]))
+            self.notes.append("ignored unrecognized %s member(s), per in-toto parsing rules: %s" % (where, listed(sorted(names))))
 
     @property
     def rejected(self) -> bool:
@@ -328,7 +341,7 @@ class Verifier:
         # payload members keep N39.
         unknown_st = sorted(k for k in st if k not in STATEMENT_MEMBERS)
         if unknown_st:
-            rep.notes.append("ignored unrecognized statement member(s), per in-toto parsing rules: " + ", ".join(unknown_st)[:160])
+            rep.notes.append("ignored unrecognized statement member(s), per in-toto parsing rules: " + listed(unknown_st))
         if st.get("_type") != STATEMENT_TYPE:
             rep.fail("statement-type-mismatch", "_type is not %s" % STATEMENT_TYPE)
         if st.get("predicateType") != PREDICATE_TYPE:
@@ -342,7 +355,7 @@ class Verifier:
             if isinstance(s0, dict):
                 unknown_s = sorted(k for k in s0 if k not in RESOURCE_DESCRIPTOR_MEMBERS)
                 if unknown_s:
-                    rep.notes.append("ignored unrecognized subject[0] member(s), per in-toto ResourceDescriptor rules: " + ", ".join(unknown_s)[:160])
+                    rep.notes.append("ignored unrecognized subject[0] member(s), per in-toto ResourceDescriptor rules: " + listed(unknown_s))
             d = s0.get("digest") if isinstance(s0, dict) else None
             v = d.get("sha256") if isinstance(d, dict) else None
             if is_hex64(v):
@@ -361,7 +374,7 @@ class Verifier:
     def _verify_predicate(self, pred: dict, subject_digest: Optional[str], rep: Report) -> None:
         unknown_p = sorted(k for k in pred if k not in PREDICATE_MEMBERS and k not in RETIRED_SPELLINGS and not k.startswith("aee"))
         if unknown_p:
-            rep.notes.append("ignored unrecognized predicate member(s), per the predicate's extensibility rule (L779-L781): " + ", ".join(unknown_p)[:160])
+            rep.notes.append("ignored unrecognized predicate member(s), per the predicate's extensibility rule (L779-L781): " + listed(unknown_p))
         for old in RETIRED_SPELLINGS:
             if old in pred:
                 rep.fail("retired-spelling", "member %r is a retired spelling with no alias" % old)
@@ -750,9 +763,9 @@ class Verifier:
                 if "keyid" in sig and not isinstance(sig.get("keyid"), str):
                     bad_keyid.append("%d.%d" % (rec.index, j))
         if not_sig:
-            rep.notes.append("observationRecords signature entr(y/ies) [record.signature] %s: sig is not base64 of 64 bytes, so it can verify nothing (Ed25519)" % ", ".join(not_sig)[:160])
+            rep.notes.append("observationRecords signature entr(y/ies) [record.signature] %s: sig is not base64 of 64 bytes, so it can verify nothing (Ed25519)" % listed(not_sig))
         if bad_keyid:
-            rep.notes.append("observationRecords signature entr(y/ies) [record.signature] %s: keyid is not a string, so it is no lookup hint" % ", ".join(bad_keyid)[:160])
+            rep.notes.append("observationRecords signature entr(y/ies) [record.signature] %s: keyid is not a string, so it is no lookup hint" % listed(bad_keyid))
         seen: Dict[bytes, int] = {}
         for rec in records:
             if rec.leaf in seen:

@@ -182,7 +182,13 @@ Since 2026-11-20 the same is done inside the predicate (measured on cbb79e5: an 
 `observationVocabulary` and `runEntropy`, of `coverage`, of each `attackResults` row, of each
 `observationRecords` envelope and of each signature entry (spec L783–L800, L874–L878, L905–L909, L918–L928,
 L953; DSSE); any other member is named, one note per object kind. `networkPosture` is not listed: all its
-members are bound by its digest (N16). DigestSets are not listed: they take any algorithm name. A signature
+members enter its digest (N16), which the records of the statement must carry; on a statement that carries no
+record nothing compares that digest, and a member added there is not named (measured on 68c6507 with the
+artifact-only scenario: `accept`, nothing in the output). DigestSets are not listed: they take any algorithm name.
+A list of names longer than 160 characters is cut there and followed by the count of the names (`... (N in all;
+list cut at 160 characters)`), in these notes and in the three of 2026-10-10; until 68c6507 the cut was silent, and
+a member named `!` and 200 letters hid every other unread member of its object. The names are collected in time
+linear in their number (68c6507: 40000 unread members in one row, 512.6 kB, 13.04 s; 0.20 s on cbb79e5). A signature
 entry whose `sig` is not base64 of 64 bytes, or whose `keyid` is not a string, is named too (DSSE: one
 verifying signature suffices, so neither moves the verdict or the tier).
 
@@ -218,4 +224,6 @@ category Cc, Zl or Zp (they include every line boundary of `str.splitlines`, and
 warning is written as `\xNN` or `\uNNNN` (`cli.one_line`); nothing else is changed.
 An input larger than the memory the process may use (measured on cbb79e5 with `/dev/zero` under
 `ulimit -v 600000`: MemoryError traceback, exit 1 — the reject status — and no JSON line) is unreadable
-input: exit 2, code `unreadable-input`, as for an OSError. No size limit is set (that is a choice still open).
+input: exit 2, code `unreadable-input`, as for an OSError; the same when the input is read but the memory ends
+while it is parsed or verified (measured on 68c6507: a 150 MiB file under `ulimit -v 600000` was still a traceback
+and exit 1). No size limit is set (that is a choice still open).

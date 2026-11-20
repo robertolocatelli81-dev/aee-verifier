@@ -53,6 +53,9 @@ Human-readable lines, then **one JSON object on the last line**:
   verdict does ignore them — the reader just sees it (SPEC_NOTES N59). Predicate-level `aee*` members keep L779–L781.
   Since 2026-11-20 also the members of the objects inside the predicate that nothing reads (closed lists
   `NESTED_MEMBERS`), and the signature entries whose `sig` is not base64 of 64 bytes or whose `keyid` is not a string.
+  A list of names longer than 160 characters is cut there and followed by the count (`... (N in all; list cut at 160
+  characters)`). Not named: the members of a DigestSet, and a member added to `networkPosture` on a statement that
+  carries no record (with records it moves the digest they must carry, SPEC_NOTES N16).
 * Each human-readable line stays one line: a character of Unicode category Cc, Zl or Zp that a
   note or message quotes from the statement is written as `\xNN` / `\uNNNN` (SPEC_NOTES N61).
 * `tiers`: one of `declared` / `attested` / `unattested` per `attackResults` row, in order; `[]` on reject.
@@ -61,8 +64,8 @@ Human-readable lines, then **one JSON object on the last line**:
   (spec, "Coverage validity").
 
 Exit status: `0` accept, `1` reject, `2` the verifier could not run
-(unreadable input, among it input larger than the memory the process may use, or bad
-invocation).
+(unreadable input, among it input larger than the memory the process may use to read
+or to parse it, or bad invocation).
 
 The input file may be the bare in-toto Statement or a DSSE envelope
 (`application/vnd.in-toto+json`) wrapping it; the envelope signature is not
@@ -156,7 +159,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 241 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 246 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -177,16 +180,17 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   30 flagged keys is skipped by the key policy, SPEC_NOTES N60) and the 10 JCS cases of gowebpki/jcs; key-policy
   entries the loader does not use are each named in a warning (3000 generated entries), and a member name repeated
   in the policy makes it unusable.
-* `tests/test_fix_20261120.py` (16 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report: a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23); a member name holding a line break forged lines of the human-readable output (N61); an input larger than the memory the process may use ended in a traceback, exit 1 and no JSON line (N61); members nothing reads, inside the predicate's objects, and signature entries that verify nothing were not named (N59); the key policy of N60 was applied by the command line only, not by `Verifier(keys)` used as a library (N60).
+* `tests/test_fix_20261120.py` (21 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report, and four defects of the first form of these fixes (68c6507: unread members collected in time quadratic in their number; a list of names cut at 160 characters without a word; memory exhausted after the read still a traceback and exit 1; the note on `networkPosture`): a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23); a member name holding a line break forged lines of the human-readable output (N61); an input larger than the memory the process may use ended in a traceback, exit 1 and no JSON line (N61); members nothing reads, inside the predicate's objects, and signature entries that verify nothing were not named (N59); the key policy of N60 was applied by the command line only, not by `Verifier(keys)` used as a library (N60).
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
   after the integer bound in `jcs.format_number`; `cli.py` and `ed25519.py` re-measured 2026-11-14 after N60; the 3 sites
   added to `verifier.py` on 2026-11-15 by the negative `aeeDropCount` rule measured on 2026-11-16, all killed):
   884 mutants, 840 killed, 44 survived; every
   survivor is classified in `tests/MUTATION.md` (equivalent or
   verdict-equivalent: message text, short-circuit flags, key-ordering,
-  constants whose change is masked by a later step).  On 2026-11-20 the lines changed by the fixes of
-  `tests/test_fix_20261120.py` were mutated with the same operators: `verifier.py` 28 sites, 26 killed;
-  `cli.py` 3 sites, 2 killed; the 3 survivors are equivalent (`tests/MUTATION.md`, last section).
+  constants whose change is masked by a later step).  These counts are those of cbb79e5; the fixes of
+  2026-11-20 added lines (`tests/mutate.py` now finds 574 sites in `verifier.py` and 30 in `cli.py`, 911 in the six
+  modules) and only the sites on the lines they changed were run, with the same operators: `verifier.py` 27 sites, 25 killed;
+  `cli.py` 5 sites, 4 killed; the 3 survivors are equivalent (`tests/MUTATION.md`, last section).
 
 ## Review before posting
 

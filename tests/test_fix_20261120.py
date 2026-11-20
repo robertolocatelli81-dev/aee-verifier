@@ -132,6 +132,81 @@ class TestUnreadableInput(unittest.TestCase):
                          '{"verdict":"error","codes":["unreadable-input"],"result":null,"tiers":[]}')
 
 
+class TestInputTooLargeToParse(unittest.TestCase):
+    """An input that is read but is larger than the memory left to parse it ended in a traceback and exit 1 (measured
+    on 68c6507: the MemoryError was handled only around the read)."""
+
+    def test_memory_exhausted_while_verifying_is_exit_2_with_the_json_line(self):
+        import resource
+
+        def limit():
+            resource.setrlimit(resource.RLIMIT_AS, (250 * 1024 * 1024, 250 * 1024 * 1024))
+
+        with tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False) as fh:
+            fh.write(b'{"a":"' + b"x" * (100 << 20) + b'"}')
+        try:
+            proc = run_cli(b"", preexec=limit, path=fh.name)
+        finally:
+            os.unlink(fh.name)
+        self.assertEqual(proc.returncode, 2, proc.stderr[-300:])
+        self.assertEqual(proc.stdout.decode().splitlines()[-1],
+                         '{"verdict":"error","codes":["unreadable-input"],"result":null,"tiers":[]}')
+        self.assertNotIn(b"Traceback", proc.stderr)
+
+
+class TestNotesNameEverythingInLinearTime(unittest.TestCase):
+    """Defects of the notes added on this branch, measured on 68c6507: the unread members of a row were collected in
+    a list searched once per member (40000 members, 512.6 kB: 13.04 s; 0.20 s on cbb79e5, which named none), and a
+    list cut at 160 characters said nothing of the cut, so one long name hid the others."""
+
+    def test_many_unread_members_cost_linear_time(self):
+        st, _ = B.scenario_pass()
+        for i in range(40000):
+            st["predicate"]["attackResults"][0]["u%d" % i] = 1
+        data = B.dumps(st)
+        t = time.perf_counter()
+        rep = Verifier(KEYS).verify_bytes(data)
+        elapsed = time.perf_counter() - t
+        self.assertEqual(rep.to_json_line()["verdict"], "accept")
+        self.assertLess(elapsed, 6.0)
+        self.assertTrue(any("(40000 in all; list cut at 160 characters)" in n for n in rep.notes))
+
+    def test_a_cut_list_says_so_and_gives_the_count(self):
+        st, _ = B.scenario_pass()
+        row = st["predicate"]["attackResults"][0]
+        row["!" + "a" * 200] = 1
+        row["zzHidden"] = 1
+        st["zz" + "b" * 200] = 1
+        st["subject"][0]["zz" + "c" * 200] = 1
+        st["predicate"]["zz" + "d" * 200] = 1
+        rec = st["predicate"]["observationRecords"][0]
+        rec["signatures"] = [{"keyid": 7, "sig": "@@"}] * 100 + rec["signatures"]
+        base = Verifier(KEYS).verify_bytes(B.dumps(B.scenario_pass()[0])).to_json_line()
+        rep = Verifier(KEYS).verify_bytes(B.dumps(st))
+        self.assertEqual(rep.to_json_line(), base)
+        cut = [n for n in rep.notes if " in all; list cut at 160 characters)" in n]
+        self.assertEqual(len(cut), 6, rep.notes)
+        self.assertEqual(sorted(n.split(" ... (", 1)[1].split(" ")[0] for n in cut), ["1", "1", "1", "100", "100", "2"])
+        self.assertTrue(all("zzHidden" not in n for n in rep.notes))      # cut away, but counted: "(2 in all"
+
+    def test_a_list_that_fits_is_written_whole_and_unmarked(self):
+        self.assertEqual(V.listed(["a" * 79, "b" * 79]), "a" * 79 + ", " + "b" * 79)       # 160 characters
+        self.assertEqual(V.listed(["a" * 80, "b" * 79]), ("a" * 80 + ", " + "b" * 79)[:160]
+                         + " ... (2 in all; list cut at 160 characters)")
+        self.assertEqual(V.listed([]), "")
+
+    def test_a_member_added_to_network_posture_is_not_named_when_no_record_binds_it(self):
+        # what the comment above NESTED_MEMBERS states: with records the member moves the binding they must carry
+        st, _ = B.scenario_artifact_only()
+        st["predicate"]["observationEnvironment"]["networkPosture"]["uExtra"] = 1
+        rep = Verifier(KEYS).verify_bytes(B.dumps(st))
+        self.assertEqual(rep.to_json_line()["verdict"], "accept")
+        self.assertFalse(any("uExtra" in n for n in rep.notes))
+        st, _ = B.scenario_pass()
+        st["predicate"]["observationEnvironment"]["networkPosture"]["uExtra"] = 1
+        self.assertEqual(Verifier(KEYS).verify_bytes(B.dumps(st)).to_json_line()["verdict"], "reject")
+
+
 class TestNestedMembersAreNamed(unittest.TestCase):
     """Members of the objects inside the predicate that nothing reads were ignored in silence (N59 named only the
     statement, subject[0] and the predicate); guard: networkPosture and DigestSets are not named (passes on cbb79e5)."""

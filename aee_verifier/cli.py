@@ -133,7 +133,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
 
     keys = load_key_policy(os.environ.get(ENV_KEYS), warn)
-    report = Verifier(keys).verify_bytes(data)
+    try:
+        report = Verifier(keys).verify_bytes(data)
+    except MemoryError:
+        # the input was read but is larger than the memory left to parse it (measured on 68c6507: 150 MiB under
+        # ulimit -v 600000 ended in a traceback and exit 1, the reject status): the same answer as above
+        del data
+        sys.stderr.write(one_line("error: cannot read %s: MemoryError" % argv[0]) + "\n")
+        emit({"verdict": "error", "codes": ["unreadable-input"], "result": None, "tiers": []})
+        return 2
     for note in report.notes:
         out.write("note: %s\n" % one_line(note))
     if report.rejected:
