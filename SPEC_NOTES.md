@@ -287,3 +287,17 @@ the attested rows meet it (`refinement attested-sealed …: met by every atteste
 spec's own test set was not run (not opened for this build: "Sources used" in the README), so whether one of its
 vectors has an `attested` row that is not `attested-sealed` is not measured; by construction its expected tiers are
 unaffected.
+
+**N65. Signatures of the records that cover nothing (2026-11-20).** L1394–L1397: of `moat-drop` and
+`uncommitted-observation` records, "A verifier MUST verify their signatures as it verifies any record's and MUST include
+their leaves in the `batchRoot` recompute"; L1397–L1401: neither may satisfy any row's class-match requirement or enter
+the method cap; L770: a row's tier reads its covering records only; L394–L397: the `result` recompute never reads a
+signature outcome. Until this note the verifier verified signatures only where a tier read them, so these two kinds were
+never verified (REQUIREMENTS said so). Measured on 64227ea and on 74dd0ba (`sonda_l1396.py`): for both kinds, cited by
+a substrate row or not, a good signature, a signature of 64 zero bytes and a signature by an unpinned key gave the
+same output (`accept`, the same tiers, no note). **Choice (the MUST is followed; what it changes is not stated by the
+text):** with a key policy, every carried record whose `aeeKind` is one of the two is verified as any record is (N48,
+under the limits of N63), after the tiers and the refinement of N64 so that it never takes a verification a tier
+needs; a record that does not verify is listed in `Report.non_covering_unverified` and named in a note. Verdict,
+codes, `result`, `tiers` and the refinement do not move: these kinds cover nothing, and the spec gives their
+signature outcome no effect on any of them. Without a key policy nothing is verified (as for every record, L772–L774).

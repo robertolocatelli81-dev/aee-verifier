@@ -419,5 +419,62 @@ class TestAttestedSealedRefinement(unittest.TestCase):
         self.assertEqual(last_line(proc), '{"verdict":"accept","codes":[],"result":"fail","tiers":["attested","unattested","attested"]}')
 
 
+class TestNonCoveringRecordSignatures(unittest.TestCase):
+    """L1394-L1397 (N65): "A verifier MUST verify their signatures as it verifies any record's" for `moat-drop` and
+    `uncommitted-observation`.  On 64227ea and 74dd0ba they were never verified: a good, a zeroed and an unpinned
+    signature gave the same output, cited by a substrate row or not.  Guard: they cover nothing, so the JSON line does
+    not move (passes on 64227ea too)."""
+
+    def _build(self, kind, state, cited):
+        recs = B.DEFAULT["records"] + [{"name": "nc", "kind": kind}]
+        if state == "unpinned":
+            recs[-1] = dict(recs[-1], seed=B.OTHER_SEED)
+        rows = [dict(r) for r in B.DEFAULT["rows"]]
+        if cited:
+            rows[1]["refs"] = ["arm", "seal", "nc"]
+        st, info = B.build(records=recs, rows=rows)
+        if state == "zeroed":
+            st["predicate"]["observationRecords"][info["index"]["nc"]]["signatures"][0]["sig"] = ZERO_SIG
+        return B.dumps(st), info["index"]["nc"]
+
+    def test_their_signatures_are_verified_and_a_failure_is_named(self):
+        for kind in ("moat-drop", "uncommitted-observation"):
+            for cited in (True, False):
+                for state in ("good", "zeroed", "unpinned"):
+                    data, idx = self._build(kind, state, cited)
+                    rep = Verifier(KEYS).verify_bytes(data)
+                    case = (kind, cited, state)
+                    self.assertEqual(rep.non_covering_unverified, [] if state == "good" else [idx], case)
+                    named = [n for n in rep.notes if n.startswith("observationRecords %d (moat-drop / " % idx)]
+                    self.assertEqual(len(named), int(state != "good"), (case, rep.notes))
+                    if named:
+                        self.assertIn("SPEC_NOTES N65", named[0])
+
+    def test_each_is_verified_once_and_only_with_keys(self):
+        data, _ = self._build("moat-drop", "good", False)
+        with CountVerify() as c:
+            Verifier(KEYS).verify_bytes(data)
+        self.assertEqual((c.calls, c.failed), (5, 0))            # int1, arm, seal, exam for the tiers; the moat-drop
+        with CountVerify() as c:
+            rep = Verifier(None).verify_bytes(data)
+        self.assertEqual((c.calls, rep.non_covering_unverified), (0, []))
+
+    def test_verified_after_the_tiers_so_the_limits_never_take_a_tier(self):
+        data, idx = self._build("uncommitted-observation", "zeroed", True)
+        rep = Verifier(KEYS + [("k2", B.OTHER_PUB)], max_failed_verifications=1).verify_bytes(data)
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested"] * 3)
+        self.assertEqual(rep.refined_tiers, ["attested-sealed"] * 3)
+        self.assertEqual(rep.non_covering_unverified, [idx])
+
+    def test_guard_the_json_line_does_not_move(self):
+        for kind in ("moat-drop", "uncommitted-observation"):
+            lines = set()
+            for cited in (True, False):
+                for state in ("good", "zeroed", "unpinned"):
+                    lines.add(str(Verifier(KEYS).verify_bytes(self._build(kind, state, cited)[0]).to_json_line()))
+            self.assertEqual(lines, {str({"verdict": "accept", "codes": [], "result": "fail",
+                                          "tiers": ["attested", "attested", "attested"]})}, kind)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -69,6 +69,8 @@ Human-readable lines, then **one JSON object on the last line**:
   line: `attested-sealed`, when a `sealed` record that satisfies its kind and binds to this run also verifies against a
   pinned key (a caught or reconstructed row does not cite the seal, so its `attested` does not depend on it); a note
   says whether the attested rows meet it, and `Report.refined_tiers` lists it per row.
+  The records of the two kinds that cover nothing (`moat-drop`, `uncommitted-observation`) have their signatures
+  verified too, as L1396 requires (SPEC_NOTES N65): one that does not verify is named in a note; no tier depends on it.
 * `primaryCode` (optional in the harness contract): the first condition found,
   except that an unmet sealed-record existence requirement is always primary
   (spec, "Coverage validity").
@@ -171,7 +173,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 269 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 273 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -193,11 +195,13 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   entries the loader does not use are each named in a warning (3000 generated entries), and a member name repeated
   in the policy makes it unusable.
 * `tests/test_fix_20261120.py` (21 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report, and four defects of the first form of these fixes (68c6507: unread members collected in time quadratic in their number; a list of names cut at 160 characters without a word; memory exhausted after the read still a traceback and exit 1; the note on `networkPosture`): a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23); a member name holding a line break forged lines of the human-readable output (N61); an input larger than the memory the process may use ended in a traceback, exit 1 and no JSON line (N61); members nothing reads, inside the predicate's objects, and signature entries that verify nothing were not named (N59); the key policy of N60 was applied by the command line only, not by `Verifier(keys)` used as a library (N60).
-* `tests/test_decisions_20261120.py` (23 tests): the consumer policies decided on 2026-11-20, each test failing on
-  64227ea except three guards (an unhashable `keyid` is no crash; a name that only looks reserved stays an
-  unrecognized member; the refinement leaves the JSON line and the exit status as they were): the input size limit (N62); the signature limits (N63),
+* `tests/test_decisions_20261120.py` (27 tests): the consumer policies decided on 2026-11-20, each test failing on
+  64227ea except four guards (an unhashable `keyid` is no crash; a name that only looks reserved stays an
+  unrecognized member; the refinement leaves the JSON line and the exit status as they were; so do the signatures of
+  the records that cover nothing): the input size limit (N62); the signature limits (N63),
   with a generative test (60 statements, random entries, key policies and limits: a limit never adds an attestation and
-  never moves the verdict, the codes or `result`); the note naming the predicate members L779–L781 reserves (N59); the refinement `attested-sealed` (N64).
+  never moves the verdict, the codes or `result`); the note naming the predicate members L779–L781 reserves (N59); the refinement `attested-sealed` (N64); the signatures of the records that cover nothing, verified as L1396
+  requires (N65; failing on 74dd0ba too).
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
   after the integer bound in `jcs.format_number`; `cli.py` and `ed25519.py` re-measured 2026-11-14 after N60; the 3 sites
   added to `verifier.py` on 2026-11-15 by the negative `aeeDropCount` rule measured on 2026-11-16, all killed):
@@ -205,10 +209,10 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   survivor is classified in `tests/MUTATION.md` (equivalent or
   verdict-equivalent: message text, short-circuit flags, key-ordering,
   constants whose change is masked by a later step).  These counts are those of cbb79e5; the fixes of
-  2026-11-20 and the decisions of the same day added lines (`tests/mutate.py` now finds 612 sites in `verifier.py` and
-  44 in `cli.py`, 963 in the six modules) and only the sites on the lines they changed were run, with the same operators:
+  2026-11-20 and the decisions of the same day added lines (`tests/mutate.py` now finds 615 sites in `verifier.py` and
+  44 in `cli.py`, 966 in the six modules) and only the sites on the lines they changed were run, with the same operators:
   for the fixes, `verifier.py` 27 sites, 25 killed, `cli.py` 5 sites, 4 killed; for the decisions (lines that differ
-  from 64227ea), `verifier.py` 45 sites, 44 killed, `cli.py` 15 sites, 12 killed; every survivor is equivalent
+  from 64227ea), `verifier.py` 45 sites, 44 killed, `cli.py` 15 sites, 12 killed; for N65, 3 sites, 3 killed; every survivor is equivalent
   (`tests/MUTATION.md`, last two sections). The four survivors of cbb79e5 on the key ordering are gone with the
   rewritten loop.
 

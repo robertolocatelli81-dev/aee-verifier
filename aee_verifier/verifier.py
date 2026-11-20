@@ -235,6 +235,9 @@ class Report:
         # kind and binding to this run verifies against a pinned key; never in the JSON line, whose `tiers` stay the
         # spec's three
         self.refined_tiers: List[str] = []
+        # N65: indexes of the carried moat-drop / uncommitted-observation records whose signature does not verify
+        # against a pinned key (verified as L1396 requires; they cover nothing, so no tier depends on them)
+        self.non_covering_unverified: List[int] = []
         self.primary: Optional[str] = None
         self.notes: List[str] = []
 
@@ -1192,6 +1195,19 @@ class Verifier:
                 REFINED_ATTESTED, "met by every attested row" if sealed_ok else
                 "not met by attested row(s) %s: no sealed record that satisfies its kind and binds to this run verifies "
                 "against a pinned key" % listed([str(i) for i in attested_rows])))
+        # N65 (L1394-L1397): "A verifier MUST verify their signatures as it verifies any record's" for the two kinds
+        # registered as covering nothing.  Verified last, under the limits of N63, so they never take a verification
+        # a tier needs; they cover nothing (L1397-L1399), so the outcome moves no tier and is named.  Until 2026-11-20
+        # these signatures were never verified: a good, a zeroed or an unpinned signature gave the same output.
+        if keys:
+            rep.non_covering_unverified = [r.index for r in records
+                                           if r.kind in NON_COVERING_REGISTERED and not record_verifies(r)]
+            if rep.non_covering_unverified:
+                rep.notes.append("observationRecords %s (%s, kinds that cover nothing): no signature verifies against "
+                                 "a pinned key, or the limits of N63 left it untried (verified per spec L1396, SPEC_NOTES "
+                                 "N65); no tier depends on them"
+                                 % (listed([str(i) for i in rep.non_covering_unverified]),
+                                    " / ".join(NON_COVERING_REGISTERED)))
         if over_cap:
             rep.notes.append("observationRecords %s: more than %d signature entries with a 64-byte sig (limit, SPEC_NOTES "
                              "N63): not tried, "
