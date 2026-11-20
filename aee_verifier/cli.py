@@ -5,7 +5,9 @@ compares"): the LAST line of stdout is one JSON object
 ``{"verdict": ..., "codes": [...], "result": ..., "tiers": [...],
 "primaryCode": ...}`` on a single line; the exit status carries the verdict
 (0 = accept, 1 = reject, 2 = the verifier could not run: unreadable input or
-bad invocation).  Human-readable lines precede the JSON line.
+bad invocation).  Human-readable lines precede the JSON line.  An input longer
+than ``AEE_MAX_INPUT_BYTES`` bytes (default 16 MiB, SPEC_NOTES N62) is
+unreadable input: exit 2, code ``unreadable-input``.
 
 The consumer key policy is read from the file named by the environment
 variable ``AEE_SUBSTRATE_KEYS``: ``{"substrateObservationKeys": [{"keyid":
@@ -24,10 +26,39 @@ import unicodedata
 from typing import List, Optional, Tuple
 
 from . import ed25519
-from .verifier import Verifier
+from .verifier import MAX_INPUT_BYTES, InputTooLarge, Verifier
 
 ENV_KEYS = "AEE_SUBSTRATE_KEYS"
 ENTRY_MEMBERS = ("keyid", "publicKeyHex")
+ENV_MAX_INPUT = "AEE_MAX_INPUT_BYTES"
+READ_CHUNK = 1 << 20
+
+
+def limit_from_env(name: str, default: int) -> int:
+    """A limit set in the environment: unset = the default; otherwise ASCII digits only, at least 1 (closed list:
+    an empty value, a sign, spaces, other digits or 0 are refused with the variable's name; exit 2, usage)."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    if not (raw.isascii() and raw.isdigit()) or int(raw) < 1:
+        raise ValueError("%s=%r is not a positive decimal integer" % (name, raw))
+    return int(raw)
+
+
+def read_limited(path: str, limit: int) -> bytes:
+    """The file's bytes, read in chunks; InputTooLarge as soon as more than ``limit`` bytes have been read, so an
+    endless device (/dev/zero) or a huge file is never held whole in memory (SPEC_NOTES N62)."""
+    chunks: List[bytes] = []
+    total = 0
+    with open(path, "rb") as fh:
+        while True:
+            chunk = fh.read(min(READ_CHUNK, limit + 1 - total))
+            if not chunk:
+                return b"".join(chunks)
+            chunks.append(chunk)
+            total += len(chunk)
+            if total > limit:
+                raise InputTooLarge("input larger than the limit of %d bytes (%s)" % (limit, ENV_MAX_INPUT))
 
 
 def one_line(text: str) -> str:
@@ -122,9 +153,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         emit({"verdict": "error", "codes": ["usage"], "result": None, "tiers": []})
         return 2
     try:
-        with open(argv[0], "rb") as fh:
-            data = fh.read()
-    except (OSError, MemoryError) as exc:
+        max_input = limit_from_env(ENV_MAX_INPUT, MAX_INPUT_BYTES)
+    except ValueError as exc:
+        sys.stderr.write(one_line("error: %s" % exc) + "\n")
+        emit({"verdict": "error", "codes": ["usage"], "result": None, "tiers": []})
+        return 2
+    try:
+        data = read_limited(argv[0], max_input)
+    except (OSError, MemoryError, InputTooLarge) as exc:
         # MemoryError: an input larger than the memory the process may use (an endless device such as /dev/zero,
         # or a huge file) ended in a traceback, exit 1 -- the reject status -- and no JSON line (measured on
         # cbb79e5 under ulimit -v 600000, 2026-11-20); it is input the verifier could not read: exit 2, as documented.
@@ -134,7 +170,7 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     keys = load_key_policy(os.environ.get(ENV_KEYS), warn)
     try:
-        report = Verifier(keys).verify_bytes(data)
+        report = Verifier(keys, max_input_bytes=max_input).verify_bytes(data)
     except MemoryError:
         # the input was read but is larger than the memory left to parse it (measured on 68c6507: 150 MiB under
         # ulimit -v 600000 ended in a traceback and exit 1, the reject status): the same answer as above

@@ -29,7 +29,7 @@ KEYS = [(B.SUBSTRATE_KEYID, B.SUBSTRATE_PUB)]
 LINE_BREAKING = ("Cc", "Zl", "Zp")
 
 
-def run_cli(data: bytes, preexec=None, path=None):
+def run_cli(data: bytes, preexec=None, path=None, env_extra=None):
     tmp = None
     if path is None:
         with tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False) as fh:
@@ -37,6 +37,7 @@ def run_cli(data: bytes, preexec=None, path=None):
             tmp = path = fh.name
     try:
         env = {k: v for k, v in os.environ.items() if k not in ("PYTHONPATH", "AEE_SUBSTRATE_KEYS")}
+        env.update(env_extra or {})
         return subprocess.run([sys.executable, os.path.join(ROOT, "aee-verify"), path], stdout=subprocess.PIPE,
                               stderr=subprocess.PIPE, env=env, preexec_fn=preexec, timeout=300)
     finally:
@@ -145,7 +146,9 @@ class TestInputTooLargeToParse(unittest.TestCase):
         with tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False) as fh:
             fh.write(b'{"a":"' + b"x" * (100 << 20) + b'"}')
         try:
-            proc = run_cli(b"", preexec=limit, path=fh.name)
+            # the input size limit of N62 (16 MiB) would stop this 100 MiB file at the read: raised so that the
+            # memory, not the limit, runs out while parsing
+            proc = run_cli(b"", preexec=limit, path=fh.name, env_extra={"AEE_MAX_INPUT_BYTES": str(200 << 20)})
         finally:
             os.unlink(fh.name)
         self.assertEqual(proc.returncode, 2, proc.stderr[-300:])

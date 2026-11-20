@@ -226,4 +226,17 @@ An input larger than the memory the process may use (measured on cbb79e5 with `/
 `ulimit -v 600000`: MemoryError traceback, exit 1 — the reject status — and no JSON line) is unreadable
 input: exit 2, code `unreadable-input`, as for an OSError; the same when the input is read but the memory ends
 while it is parsed or verified (measured on 68c6507: a 150 MiB file under `ulimit -v 600000` was still a traceback
-and exit 1). No size limit is set (that is a choice still open).
+and exit 1). Since then an input size limit is set too (N62).
+
+**N62. Input size limit (2026-11-20).** The spec sets no limit on the size of a statement, and the README contract
+("What the suite compares") none on the input file. Measured on 64227ea (CPython 3.11.2): `/dev/zero` as the input was
+read until the memory ran out (under a 600 MB address-space limit: 586 MB resident, then exit 2; with no process limit
+not measured, as it would take the machine's memory); a 16 MiB statement whose predicate carries an array of 8 million integers peaked at 760 MB of resident memory
+and took 7.7 s (46 bytes of memory per input byte; 1 and 4 MiB: 0.5 and 1.9 s); the largest honest statement the test
+builder makes (2000 caught rows, each with its own signed record) is 1.6 MB. **Choice (a consumer resource policy):**
+the command line reads the input in chunks of 1 MiB and stops as soon as more than `AEE_MAX_INPUT_BYTES` bytes (default
+16 MiB = 16777216) have been read: exit 2, code `unreadable-input`, the JSON line written, as for an unreadable file
+(`/dev/zero` with no process limit: exit 2 after 0.22 s at 31 MB resident).
+`Verifier(keys, max_input_bytes=…)` (same default) raises `InputTooLarge` on a longer input, so the library gives no
+verdict either. The variable, when set, must be ASCII decimal digits of value at least 1; any other value (empty, a
+sign, spaces, other digits, 0) is a bad invocation: exit 2, code `usage`, the variable named on stderr.

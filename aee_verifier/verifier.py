@@ -58,6 +58,23 @@ NESTED_MEMBERS = {
 
 NOTE_LIST_CHARS = 160
 
+# Input size limit (SPEC_NOTES N62, a consumer resource policy: the spec sets none).  Measured on 64227ea with CPython
+# 3.11.2: a 16 MiB statement whose predicate carries an array of 8 million integers peaked at 760 MB of resident memory
+# and took 7.7 s through the command line (46 bytes of memory per input byte); 1, 4 MiB: 0.5, 1.9 s.  The largest
+# honest statement the test builder makes (2000 caught rows, each with its own signed record) is 1.6 MB.
+MAX_INPUT_BYTES = 16 * 1024 * 1024
+
+
+class InputTooLarge(ValueError):
+    """The input exceeds the input size limit: no verdict is derived (the command line exits 2, unreadable-input)."""
+
+
+def positive_limit(name: str, value) -> int:
+    """A limit is an int (not a bool) of at least 1; anything else is refused with its name (closed list)."""
+    if not (isinstance(value, int) and not isinstance(value, bool)) or value < 1:
+        raise ValueError("%s must be an integer of at least 1, not %r" % (name, value))
+    return value
+
 
 def listed(names) -> str:
     """The names of a note, joined: all of them when they fit in NOTE_LIST_CHARS characters; otherwise the first
@@ -245,8 +262,9 @@ class Report:
 
 
 class Verifier:
-    def __init__(self, keys: Optional[List[Tuple[str, bytes]]] = None):
+    def __init__(self, keys: Optional[List[Tuple[str, bytes]]] = None, *, max_input_bytes: int = MAX_INPUT_BYTES):
         """keys: list of (keyid, raw 32-byte Ed25519 public key); None = no policy.
+        max_input_bytes: ``verify_bytes`` raises InputTooLarge on a longer input (SPEC_NOTES N62).
 
         The key policy of SPEC_NOTES N60 is applied here, not only in the CLI loader: until 2026-11-20 a caller of this
         class passing the identity point (small order) got every substrate row ``attested`` by signatures made with no
@@ -254,6 +272,7 @@ class Verifier:
         length 32 decoding to a point of prime order.  Every other entry is skipped and named in the report notes; a
         keyid that is not a string is kept as "" (it only orders the keys tried) and named.  ``keys`` itself must be
         None, a list or a tuple (TypeError otherwise)."""
+        self.max_input_bytes = positive_limit("max_input_bytes", max_input_bytes)
         self.key_notes: List[str] = []
         if keys is None:
             self.keys = None
@@ -282,6 +301,8 @@ class Verifier:
 
     # ------------------------------------------------------------------ entry
     def verify_bytes(self, data: bytes) -> Report:
+        if len(data) > self.max_input_bytes:
+            raise InputTooLarge("input of %d bytes is larger than the limit of %d bytes" % (len(data), self.max_input_bytes))
         rep = Report()
         rep.notes.extend(self.key_notes)
         statement = self._parse_statement_bytes(data, rep)
