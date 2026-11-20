@@ -33,6 +33,25 @@ IN_TOTO_ENVELOPE_TYPE = "application/vnd.in-toto+json"
 STATEMENT_MEMBERS = frozenset({"_type", "subject", "predicateType", "predicate"})
 RESOURCE_DESCRIPTOR_MEMBERS = frozenset({"name", "uri", "digest", "content", "downloadLocation", "mediaType", "annotations"})
 PREDICATE_MEMBERS = frozenset({"result", "issuedAt", "doesNotAssert", "observationEnvironment", "coverage", "attackResults", "observationRecords", "batchRoot", "evidenceTier"})
+# Members of the objects inside the predicate (spec "Fields": observationEnvironment L783-L800 and L874-L878, coverage
+# L905-L909, attackResults L918-L928 and L953 observationSelectors; DSSE envelope and signature entries).  Since
+# 2026-11-20 any other member of these objects is named in `notes` too (SPEC_NOTES N59); the verdict still ignores it.
+# networkPosture is absent on purpose: every member it carries is bound by its canonical digest (N16), so all are read;
+# DigestSet objects take any algorithm name (in-toto ResourceDescriptor), so they are absent too.
+NESTED_MEMBERS = {
+    "observationEnvironment": frozenset({"substrate", "corpus", "catchPolicy", "networkPosture", "observationVocabulary", "runEntropy"}),
+    "observationEnvironment.substrate": RESOURCE_DESCRIPTOR_MEMBERS,
+    "observationEnvironment.catchPolicy": RESOURCE_DESCRIPTOR_MEMBERS,
+    "observationEnvironment.corpus": frozenset({"name", "uri", "digest", "manifest"}),
+    "observationEnvironment.corpus.manifest": frozenset({"classes", "expectedPayloads"}),
+    "observationEnvironment.observationVocabulary": frozenset({"labels", "caught", "digest"}),
+    "observationEnvironment.runEntropy": frozenset({"digest"}),
+    "coverage": frozenset({"assessedClasses", "outOfScope", "routedElsewhere"}),
+    "attackResults[]": frozenset({"attackId", "containmentObserved", "basis", "method", "attribution", "actualLayer",
+                                  "observationRefs", "observationSelectors"}),
+    "observationRecords[]": frozenset({"payload", "payloadType", "signatures"}),
+    "observationRecords[].signatures[]": frozenset({"keyid", "sig"}),
+}
 
 
 RESULTS = ("fail", "degraded", "pass_indirect", "pass")  # ascending order
@@ -173,6 +192,19 @@ class Report:
 
     def fail(self, code: str, message: str) -> None:
         self.codes.append((code, message))
+
+    def note_unread(self, where: str, objs) -> None:
+        """One note naming the members of ``objs`` (the objects found at ``where``) that NESTED_MEMBERS[where] does not
+        list; silent when there are none."""
+        known = NESTED_MEMBERS[where]
+        names: List[str] = []
+        for o in objs:
+            if isinstance(o, dict):
+                for k in o:
+                    if k not in known and k not in names:
+                        names.append(k)
+        if names:
+            self.notes.append("ignored unrecognized %s member(s), per in-toto parsing rules: %s" % (where, ", ".join(sorted(names))[:160]))
 
     @property
     def rejected(self) -> bool:
@@ -339,6 +371,7 @@ class Verifier:
         n_records = len(records_raw) if isinstance(records_raw, list) else 0
         row_infos = []
         attack_ids_seen: Dict[str, int] = {}
+        rep.note_unread("attackResults[]", rows)
         for i, row in enumerate(rows):
             info = self._row_info(row, labels, caught)
             row_infos.append(info)
@@ -449,6 +482,11 @@ class Verifier:
                 return None
             return v
 
+        rep.note_unread("observationEnvironment", [env])
+        for name in ("substrate", "catchPolicy", "corpus", "observationVocabulary", "runEntropy"):
+            rep.note_unread("observationEnvironment." + name, [env.get(name)])
+        corpus_ = env.get("corpus")
+        rep.note_unread("observationEnvironment.corpus.manifest", [corpus_.get("manifest") if isinstance(corpus_, dict) else None])
         info["substrate_digest"] = descriptor_digest("substrate", "substrate-digest-malformed")
         info["catch_policy_digest"] = descriptor_digest("catchPolicy", "catch-policy-digest-malformed")
 
@@ -562,6 +600,7 @@ class Verifier:
 
     # ----------------------------------------------------------- coverage
     def _verify_coverage(self, cov: dict, env_info: dict, rep: Report) -> Optional[Set[str]]:
+        rep.note_unread("coverage", [cov])
         assessed = cov.get("assessedClasses")
         oos = cov.get("outOfScope")
         routed = cov.get("routedElsewhere")
@@ -665,6 +704,23 @@ class Verifier:
             records.append(rec)
         if not ok:
             return None
+        rep.note_unread("observationRecords[]", records_raw)
+        rep.note_unread("observationRecords[].signatures[]", [s for r in records for s in r.signatures])
+        # A signature entry that cannot verify, or whose keyid is not a string, is named rather than skipped in silence
+        # (DSSE: one verifying signature is enough, so neither changes the verdict or the tier).
+        not_sig: List[str] = []
+        bad_keyid: List[str] = []
+        for rec in records:
+            for j, sig in enumerate(rec.signatures):
+                raw = decode_base64(sig.get("sig"))
+                if raw is None or len(raw) != 64:
+                    not_sig.append("%d.%d" % (rec.index, j))
+                if "keyid" in sig and not isinstance(sig.get("keyid"), str):
+                    bad_keyid.append("%d.%d" % (rec.index, j))
+        if not_sig:
+            rep.notes.append("observationRecords signature entr(y/ies) [record.signature] %s: sig is not base64 of 64 bytes, so it can verify nothing (Ed25519)" % ", ".join(not_sig)[:160])
+        if bad_keyid:
+            rep.notes.append("observationRecords signature entr(y/ies) [record.signature] %s: keyid is not a string, so it is no lookup hint" % ", ".join(bad_keyid)[:160])
         seen: Dict[bytes, int] = {}
         for rec in records:
             if rec.leaf in seen:

@@ -175,6 +175,16 @@ Measured on 0ea2708: a statement, a `subject[0]` and a predicate carrying a memb
 to `notes` (one line per object: statement, `subject[0]`, predicate), so the reader sees what was not read. The
 closed lists are `STATEMENT_MEMBERS`, `RESOURCE_DESCRIPTOR_MEMBERS`, `PREDICATE_MEMBERS` in `verifier.py`; `aee*`
 members keep N39 and are not noted here.
+Since 2026-11-20 the same is done inside the predicate (measured on cbb79e5: an unknown member added to
+`observationEnvironment`, its `catchPolicy`, `coverage`, a row, a record envelope and a signature entry gave
+`accept` with nothing in the output): `NESTED_MEMBERS` in `verifier.py` lists the members of
+`observationEnvironment` and of its `substrate`, `catchPolicy`, `corpus`, `corpus.manifest`,
+`observationVocabulary` and `runEntropy`, of `coverage`, of each `attackResults` row, of each
+`observationRecords` envelope and of each signature entry (spec L783–L800, L874–L878, L905–L909, L918–L928,
+L953; DSSE); any other member is named, one note per object kind. `networkPosture` is not listed: all its
+members are bound by its digest (N16). DigestSets are not listed: they take any algorithm name. A signature
+entry whose `sig` is not base64 of 64 bytes, or whose `keyid` is not a string, is named too (DSSE: one
+verifying signature suffices, so neither moves the verdict or the tier).
 
 **N60. Keys of small or mixed order in the key policy; entries the loader cannot use.** N47 reads a 32-byte
 `publicKeyHex` as a raw Ed25519 key and verifies with the cofactorless RFC 8032 equation, which RFC 8032 allows for

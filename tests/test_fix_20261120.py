@@ -132,5 +132,91 @@ class TestUnreadableInput(unittest.TestCase):
                          '{"verdict":"error","codes":["unreadable-input"],"result":null,"tiers":[]}')
 
 
+class TestNestedMembersAreNamed(unittest.TestCase):
+    """Members of the objects inside the predicate that nothing reads were ignored in silence (N59 named only the
+    statement, subject[0] and the predicate); guard: networkPosture and DigestSets are not named (passes on cbb79e5)."""
+
+    def _objects(self, st):
+        p = st["predicate"]
+        env = p["observationEnvironment"]
+        return {
+            "observationEnvironment": env,
+            "observationEnvironment.substrate": env["substrate"],
+            "observationEnvironment.catchPolicy": env["catchPolicy"],
+            "observationEnvironment.corpus": env["corpus"],
+            "observationEnvironment.corpus.manifest": env["corpus"]["manifest"],
+            "observationEnvironment.observationVocabulary": env["observationVocabulary"],
+            "observationEnvironment.runEntropy": env["runEntropy"],
+            "coverage": p["coverage"],
+            "attackResults[]": p["attackResults"][2],
+            "observationRecords[]": p["observationRecords"][1],
+            "observationRecords[].signatures[]": p["observationRecords"][0]["signatures"][0],
+        }
+
+    def test_the_closed_lists_cover_every_object_the_builder_writes(self):
+        st, _ = B.scenario_pass()
+        self.assertEqual(set(self._objects(st)), set(V.NESTED_MEMBERS))
+        rep = Verifier(KEYS).verify_bytes(B.dumps(st))
+        self.assertEqual([n for n in rep.notes if "ignored unrecognized" in n], [])
+
+    def test_each_unread_member_is_named_and_the_verdict_does_not_move(self):
+        rnd = random.Random(1120)
+        for where in V.NESTED_MEMBERS:
+            if where == "observationEnvironment.corpus.manifest":
+                continue  # digest-pinned: an extra member is also a digest mismatch, tested below
+            for _ in range(3):
+                st, _ = B.scenario_pass()
+                base = Verifier(KEYS).verify_bytes(B.dumps(st)).to_json_line()
+                name = "u%08x" % rnd.getrandbits(32)
+                obj = self._objects(st)[where]
+                obj[name] = rnd.choice([None, 1, "x", [1], {"a": 1}])
+                rep = Verifier(KEYS).verify_bytes(B.dumps(st))
+                self.assertEqual(rep.to_json_line(), base, where)
+                notes = [n for n in rep.notes if "ignored unrecognized %s member" % where in n]
+                self.assertEqual(len(notes), 1, (where, rep.notes))
+                self.assertIn(name, notes[0])
+
+    def test_an_extra_manifest_member_is_named_beside_the_digest_check(self):
+        st, _ = B.scenario_pass()
+        st["predicate"]["observationEnvironment"]["corpus"]["manifest"]["uExtra"] = 1
+        rep = Verifier(KEYS).verify_bytes(B.dumps(st))
+        self.assertIn("corpus-digest-mismatch", rep.code_set())
+        self.assertTrue(any("corpus.manifest member" in n and "uExtra" in n for n in rep.notes), rep.notes)
+
+    def test_network_posture_and_digest_sets_are_not_named(self):
+        st, _ = B.scenario_pass()
+        st["predicate"]["observationEnvironment"]["substrate"]["digest"]["sha512"] = "00"
+        rep = Verifier(KEYS).verify_bytes(B.dumps(st))
+        self.assertEqual(rep.to_json_line()["verdict"], "accept")
+        self.assertEqual([n for n in rep.notes if "ignored unrecognized" in n], [])
+
+
+class TestSignatureEntriesAreNamed(unittest.TestCase):
+    """A signature entry that can verify nothing, or a keyid that is not a string, was skipped in silence; guard:
+    well-formed entries are not named (passes on cbb79e5)."""
+
+    def test_entries_that_verify_nothing_and_non_string_keyids_are_named(self):
+        cases = [("@@", None), ("", None), (base64.b64encode(bytes(63)).decode(), None),
+                 (base64.b64encode(bytes(65)).decode(), None), (None, {"k": 1}), (None, 7), (None, [B.SUBSTRATE_KEYID])]
+        for sig, keyid in cases:
+            st, _ = B.scenario_pass()
+            base = Verifier(KEYS).verify_bytes(B.dumps(st)).to_json_line()
+            rec = st["predicate"]["observationRecords"][1]
+            extra = dict(rec["signatures"][0])
+            if sig is not None:
+                extra["sig"] = sig
+            if keyid is not None:
+                extra["keyid"] = keyid
+            rec["signatures"] = [extra, rec["signatures"][0]] if keyid is None else [extra]
+            rep = Verifier(KEYS).verify_bytes(B.dumps(st))
+            self.assertEqual(rep.to_json_line(), base, (sig, keyid))
+            what = "can verify nothing" if keyid is None else "keyid is not a string"
+            self.assertTrue(any(what in n and " 1.0" in n for n in rep.notes), (sig, keyid, rep.notes))
+
+    def test_well_formed_entries_are_not_named(self):
+        rep = Verifier(KEYS).verify_bytes(B.dumps(B.scenario_pass()[0]))
+        self.assertFalse(any("signature entr" in n for n in rep.notes), rep.notes)
+
+
 if __name__ == "__main__":
     unittest.main()
