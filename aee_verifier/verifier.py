@@ -233,12 +233,44 @@ class Report:
 
 class Verifier:
     def __init__(self, keys: Optional[List[Tuple[str, bytes]]] = None):
-        # keys: list of (keyid, raw ed25519 public key bytes); None = no policy
-        self.keys = keys
+        """keys: list of (keyid, raw 32-byte Ed25519 public key); None = no policy.
+
+        The key policy of SPEC_NOTES N60 is applied here, not only in the CLI loader: until 2026-11-20 a caller of this
+        class passing the identity point (small order) got every substrate row ``attested`` by signatures made with no
+        secret (R = [s]B, S = s; measured on cbb79e5).  Closed list of what is kept: a pair whose key is bytes of
+        length 32 decoding to a point of prime order.  Every other entry is skipped and named in the report notes; a
+        keyid that is not a string is kept as "" (it only orders the keys tried) and named.  ``keys`` itself must be
+        None, a list or a tuple (TypeError otherwise)."""
+        self.key_notes: List[str] = []
+        if keys is None:
+            self.keys = None
+            return
+        if not isinstance(keys, (list, tuple)):
+            raise TypeError("keys must be None or a list of (keyid, 32-byte Ed25519 public key) pairs")
+        kept: List[Tuple[str, bytes]] = []
+        for n, entry in enumerate(keys):
+            if not (isinstance(entry, (list, tuple)) and len(entry) == 2):
+                self.key_notes.append("key policy entry %d is not a (keyid, public key) pair; skipped" % n)
+                continue
+            keyid, raw = entry
+            if not isinstance(raw, (bytes, bytearray)) or len(raw) != 32:
+                self.key_notes.append("key policy entry %d is not a 32-byte (Ed25519) public key; skipped" % n)
+                continue
+            raw = bytes(raw)
+            cls = ed25519.point_class(raw)
+            if cls != "prime-order":
+                self.key_notes.append("key policy entry %d is %s; skipped (SPEC_NOTES N60)" % (n, cls))
+                continue
+            if not isinstance(keyid, str):
+                self.key_notes.append("key policy entry %d: keyid is not a string; key kept with no keyid hint" % n)
+                keyid = ""
+            kept.append((keyid, raw))
+        self.keys = kept
 
     # ------------------------------------------------------------------ entry
     def verify_bytes(self, data: bytes) -> Report:
         rep = Report()
+        rep.notes.extend(self.key_notes)
         statement = self._parse_statement_bytes(data, rep)
         if statement is None:
             return rep

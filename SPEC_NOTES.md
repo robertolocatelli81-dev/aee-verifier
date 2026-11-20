@@ -205,6 +205,11 @@ the policy unusable (no pinned key, with a warning; RFC 7493 2.3, as `strict_jso
 0d8cee1 the last one silently won, so a key could drop out without a word. A `keyid` that is not a string is warned
 about and the key is kept: the keyid is only an ordering hint (`verifier.py`, signature loop); until 0d8cee1 it
 silently became `""`.
+Since 2026-11-20 the same policy is applied by `Verifier(keys)` itself (measured on cbb79e5: a caller of the
+class passing the identity point got every substrate row `attested` by signatures made with no secret, while
+the command line skipped the key). Kept: a pair whose key is 32 bytes decoding to a point of prime order;
+every other entry is skipped and named in the notes; a `keyid` that is not a string is kept as `""` and
+named; `keys` other than None, a list or a tuple is a TypeError.
 
 **N61. One line per human-readable line (2026-11-20).** The notes and messages quote statement text. Measured on
 cbb79e5: a statement member named `x\naccept: … (forged)\n{"verdict":"accept",…}` put a forged `accept:` line and a

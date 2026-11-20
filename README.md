@@ -32,7 +32,8 @@ Consumer key policy (optional) via the environment variable the harness
 documents: `AEE_SUBSTRATE_KEYS=/path/to/keys.json` holding
 `{"substrateObservationKeys": [{"keyid": "...", "publicKeyHex": "<64 hex>"}]}`
 (32-byte raw Ed25519 public keys).  Unset: every `basis: substrate` row
-derives `unattested`.
+derives `unattested`.  A key of small or mixed order is skipped (SPEC_NOTES N60), by the
+command line and, since 2026-11-20, by `Verifier(keys)` used as a library too.
 
 ### Output
 
@@ -155,7 +156,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 237 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 241 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -176,14 +177,16 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   30 flagged keys is skipped by the key policy, SPEC_NOTES N60) and the 10 JCS cases of gowebpki/jcs; key-policy
   entries the loader does not use are each named in a warning (3000 generated entries), and a member name repeated
   in the policy makes it unusable.
-* `tests/test_fix_20261120.py` (12 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report: a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23); a member name holding a line break forged lines of the human-readable output (N61); an input larger than the memory the process may use ended in a traceback, exit 1 and no JSON line (N61); members nothing reads, inside the predicate's objects, and signature entries that verify nothing were not named (N59).
+* `tests/test_fix_20261120.py` (16 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report: a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23); a member name holding a line break forged lines of the human-readable output (N61); an input larger than the memory the process may use ended in a traceback, exit 1 and no JSON line (N61); members nothing reads, inside the predicate's objects, and signature entries that verify nothing were not named (N59); the key policy of N60 was applied by the command line only, not by `Verifier(keys)` used as a library (N60).
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
   after the integer bound in `jcs.format_number`; `cli.py` and `ed25519.py` re-measured 2026-11-14 after N60; the 3 sites
   added to `verifier.py` on 2026-11-15 by the negative `aeeDropCount` rule measured on 2026-11-16, all killed):
   884 mutants, 840 killed, 44 survived; every
   survivor is classified in `tests/MUTATION.md` (equivalent or
   verdict-equivalent: message text, short-circuit flags, key-ordering,
-  constants whose change is masked by a later step).
+  constants whose change is masked by a later step).  On 2026-11-20 the lines changed by the fixes of
+  `tests/test_fix_20261120.py` were mutated with the same operators: `verifier.py` 28 sites, 26 killed;
+  `cli.py` 3 sites, 2 killed; the 3 survivors are equivalent (`tests/MUTATION.md`, last section).
 
 ## Review before posting
 

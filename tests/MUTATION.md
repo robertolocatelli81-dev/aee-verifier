@@ -107,3 +107,14 @@ Line numbers refer to the committed sources.
 |------|----------|-------|-----------------|
 | L98 | `ensure_ascii=False` → `True` | equivalent | Produces an escaped but JSON-identical last line. |
 | L122 | `or "-"` → `and "-"` | message-only | Human-readable accept line only. |
+
+### Lines changed on 2026-11-20 (`tests/test_fix_20261120.py`) (3)
+
+Measured on CPython 3.11.2 with the operators of `tests/mutate.py`, restricted to the changed lines: `verifier.py`
+28 sites, 26 killed; `cli.py` 3 sites, 2 killed.
+
+| Line | Mutation | Class | Why it survives |
+|------|----------|-------|-----------------|
+| verifier.py L1047 | `not in arming_postures` → `in` | equivalent | The list stays empty, `all()` over it is true; every arming and sealed record that is `kind_valid` already carries the pinned posture digest (`_check_kind`), so the comparison never decides (the same reason as L948 above). A differential run of 400 generated statements (115 accepted) gave identical JSON lines and codes; the non-equivalent `==` → `!=` on L1050 differed on 146. |
+| verifier.py L1050 | `all` → `any` on seal-vs-arming posture | equivalent | At most one distinct posture reaches the list (same reason); `any` and `all` agree on one element, and `bool(armings)` decides the empty case. Same differential: identical. |
+| cli.py L45 | `o < 0x100` → `o <= 0x100` | equivalent | U+0100 is a letter (Lu): no character of Cc, Zl or Zp has code point 0x100 (the test over every code point passes on the mutant). |

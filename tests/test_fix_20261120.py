@@ -218,5 +218,57 @@ class TestSignatureEntriesAreNamed(unittest.TestCase):
         self.assertFalse(any("signature entr" in n for n in rep.notes), rep.notes)
 
 
+def _forge_with_identity(st):
+    s = 424242
+    sig = base64.b64encode(ed25519._encode_point(ed25519._mul(s, ed25519._B)) + s.to_bytes(32, "little")).decode()
+    for rec in st["predicate"]["observationRecords"]:
+        rec["signatures"] = [{"keyid": "id", "sig": sig}]
+    return st
+
+
+class TestApiKeyPolicy(unittest.TestCase):
+    """The key policy of N60 (keys of small or mixed order attest nothing) was applied by the CLI only, not by
+    `Verifier`."""
+
+    IDENTITY = bytes([1]) + bytes(31)
+
+    def _mixed(self):
+        A = ed25519._decode_point(B.SUBSTRATE_PUB)
+        T2 = ed25519._decode_point(bytes.fromhex("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"))
+        return ed25519._encode_point(ed25519._add(A, T2))
+
+    def test_identity_key_attests_nothing_through_the_api(self):
+        st = _forge_with_identity(B.scenario_pass()[0])
+        rep = Verifier([("id", self.IDENTITY)]).verify_bytes(B.dumps(st))
+        self.assertEqual(rep.to_json_line()["verdict"], "accept")
+        self.assertEqual(rep.tiers, ["unattested"] * 3)
+        self.assertTrue(any("small order" in n for n in rep.notes), rep.notes)
+
+    def test_every_unusable_entry_is_skipped_and_named(self):
+        self.assertEqual(ed25519.point_class(self._mixed()), "a point with a torsion component")
+        st, _ = B.scenario_pass()
+        bad = [("a", self.IDENTITY), ("b", self._mixed()), ("c", bytes(31)), ("d", "00" * 32), ("e", b"\xff" * 32),
+               ("f",), ("g", B.SUBSTRATE_PUB, "x"), "h", None, ("i", "a" * 32), ("j", list(B.SUBSTRATE_PUB))]
+        v = Verifier(bad)
+        self.assertEqual(v.keys, [])
+        rep = v.verify_bytes(B.dumps(st))
+        self.assertEqual(rep.tiers, ["unattested"] * 3)
+        self.assertEqual(len([n for n in rep.notes if n.startswith("key policy entry")]), len(bad))
+
+    def test_good_key_still_attests_and_a_non_string_keyid_is_kept_and_named(self):
+        st, _ = B.scenario_pass()
+        for keyid in (B.SUBSTRATE_KEYID, 5, None):
+            rep = Verifier([(keyid, B.SUBSTRATE_PUB)]).verify_bytes(B.dumps(st))
+            self.assertEqual(rep.tiers, ["attested"] * 3, keyid)
+            self.assertEqual(any("keyid is not a string" in n for n in rep.notes), not isinstance(keyid, str))
+        rep = Verifier((("x", bytearray(B.SUBSTRATE_PUB)),)).verify_bytes(B.dumps(st))
+        self.assertEqual(rep.tiers, ["attested"] * 3)
+
+    def test_keys_of_another_type_are_refused(self):
+        for keys in ("abc", {"k": B.SUBSTRATE_PUB}, 5, B.SUBSTRATE_PUB):
+            with self.assertRaises(TypeError):
+                Verifier(keys)
+
+
 if __name__ == "__main__":
     unittest.main()
