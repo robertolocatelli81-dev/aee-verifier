@@ -411,6 +411,13 @@ class Verifier:
         unknown_p = sorted(k for k in pred if k not in PREDICATE_MEMBERS and k not in RETIRED_SPELLINGS and not k.startswith("aee"))
         if unknown_p:
             rep.notes.append("ignored unrecognized predicate member(s), per the predicate's extensibility rule (L779-L781): " + listed(unknown_p))
+        # L779-L781: a carried `evidenceTier` and every predicate-level member beginning with `aee` MUST be ignored and
+        # MUST NOT alter the derivation.  Ignored, and since 2026-11-20 named (SPEC_NOTES N59): until then they were the
+        # only members of the statement ignored without a word.
+        reserved_p = sorted(k for k in pred if k == "evidenceTier" or k.startswith("aee"))
+        if reserved_p:
+            rep.notes.append("ignored predicate member(s) the spec reserves, per L779-L781 (MUST be ignored, MUST NOT alter "
+                             "the derivation): " + listed(reserved_p))
         for old in RETIRED_SPELLINGS:
             if old in pred:
                 rep.fail("retired-spelling", "member %r is a retired spelling with no alias" % old)

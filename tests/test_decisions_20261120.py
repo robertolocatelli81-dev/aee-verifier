@@ -272,5 +272,48 @@ class TestSignatureLimits(unittest.TestCase):
         self.assertEqual(Verifier(KEYS3).verify_bytes(B.dumps(st)).to_json_line()["tiers"], ["attested"] * 3)
 
 
+class TestReservedPredicateMembersAreNamed(unittest.TestCase):
+    """D2 (N59): a carried `evidenceTier` or predicate-level `aee*` member was ignored as L779-L781 require, and was
+    the only kind of ignored member not named (64227ea: `predicate.aeeInventato` -> accept, no note).  Guard: a name
+    that only looks reserved stays an unrecognized member (passes on 64227ea too)."""
+
+    NOTE = "ignored predicate member(s) the spec reserves, per L779-L781 (MUST be ignored, MUST NOT alter the derivation): "
+
+    def test_reserved_members_are_named_in_one_note(self):
+        for members, named in (({"aeeInventato": 1}, "aeeInventato"), ({"evidenceTier": "attested"}, "evidenceTier"),
+                               ({"aeeX": 1, "evidenceTier": "declared", "aee": [2]}, "aee, aeeX, evidenceTier")):
+            st, _ = B.scenario_pass()
+            st["predicate"].update(members)
+            rep = Verifier(KEYS).verify_bytes(B.dumps(st))
+            self.assertEqual([n for n in rep.notes if "the spec reserves" in n], [self.NOTE + named], members)
+
+    def test_reserved_members_never_move_the_output_and_are_named_generative(self):
+        rnd = random.Random(779)
+        values = [None, True, 0, -1, 1.5, "", "attested", "unattested", [], ["attested"] * 3, {"tiers": ["attested"]},
+                  {"aeeKind": "sealed"}]
+        names = ["evidenceTier", "aee", "aeeTier", "aeeResult", "aeeKind", "aeeRunBinding", "aee\u00e9", "aee" + "z" * 300]
+        for _ in range(40):
+            scenario = rnd.choice([B.scenario_pass, B.scenario_fail, B.scenario_degraded, B.scenario_artifact_only])
+            keys = rnd.choice([None, KEYS])
+            base = Verifier(keys).verify_bytes(B.dumps(scenario()[0]))
+            st, _ = scenario()
+            chosen = rnd.sample(names, rnd.randrange(1, 4))
+            for n in chosen:
+                st["predicate"][n] = rnd.choice(values)
+            rep = Verifier(keys).verify_bytes(B.dumps(st))
+            self.assertEqual(rep.to_json_line(), base.to_json_line(), chosen)
+            self.assertEqual(rep.notes[:len(base.notes)], base.notes)
+            self.assertEqual(len(rep.notes), len(base.notes) + 1)
+            self.assertTrue(rep.notes[-1].startswith(self.NOTE), rep.notes[-1])
+
+    def test_guard_a_name_that_only_looks_reserved_stays_unrecognized(self):
+        for name in ("Aee", "AEEX", "_aee", " aee", "evidencetier", "EvidenceTier"):
+            st, _ = B.scenario_pass()
+            st["predicate"][name] = 1
+            rep = Verifier(KEYS).verify_bytes(B.dumps(st))
+            self.assertFalse(any("the spec reserves" in n for n in rep.notes), name)
+            self.assertTrue(any("ignored unrecognized predicate member" in n and name in n for n in rep.notes), name)
+
+
 if __name__ == "__main__":
     unittest.main()

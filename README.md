@@ -50,7 +50,9 @@ Human-readable lines, then **one JSON object on the last line**:
 * `result`: the recomputed token (`fail` < `degraded` < `pass_indirect` < `pass`), `null` on reject.
 * Since 2026-10-10 the human-readable lines also NAME every statement, `subject[0]` or predicate member this verifier
   did not read (`ignored unrecognized … member(s)`): the in-toto parsing rules say such members are ignored, and the
-  verdict does ignore them — the reader just sees it (SPEC_NOTES N59). Predicate-level `aee*` members keep L779–L781.
+  verdict does ignore them — the reader just sees it (SPEC_NOTES N59). Predicate-level `aee*` members and a carried
+  `evidenceTier` keep L779–L781 (ignored, never moving the derivation) and, since 2026-11-20, are named too, in a note
+  of their own (`ignored predicate member(s) the spec reserves …`).
   Since 2026-11-20 also the members of the objects inside the predicate that nothing reads (closed lists
   `NESTED_MEMBERS`), and the signature entries whose `sig` is not base64 of 64 bytes or whose `keyid` is not a string.
   A list of names longer than 160 characters is cut there and followed by the count (`... (N in all; list cut at 160
@@ -165,7 +167,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 259 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 262 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -187,10 +189,11 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   entries the loader does not use are each named in a warning (3000 generated entries), and a member name repeated
   in the policy makes it unusable.
 * `tests/test_fix_20261120.py` (21 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report, and four defects of the first form of these fixes (68c6507: unread members collected in time quadratic in their number; a list of names cut at 160 characters without a word; memory exhausted after the read still a traceback and exit 1; the note on `networkPosture`): a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23); a member name holding a line break forged lines of the human-readable output (N61); an input larger than the memory the process may use ended in a traceback, exit 1 and no JSON line (N61); members nothing reads, inside the predicate's objects, and signature entries that verify nothing were not named (N59); the key policy of N60 was applied by the command line only, not by `Verifier(keys)` used as a library (N60).
-* `tests/test_decisions_20261120.py` (13 tests): the consumer policies decided on 2026-11-20, each test failing on
-  64227ea except one guard (an unhashable `keyid` is no crash): the input size limit (N62); the signature limits (N63),
+* `tests/test_decisions_20261120.py` (16 tests): the consumer policies decided on 2026-11-20, each test failing on
+  64227ea except two guards (an unhashable `keyid` is no crash; a name that only looks reserved stays an
+  unrecognized member): the input size limit (N62); the signature limits (N63),
   with a generative test (60 statements, random entries, key policies and limits: a limit never adds an attestation and
-  never moves the verdict, the codes or `result`).
+  never moves the verdict, the codes or `result`); the note naming the predicate members L779–L781 reserves (N59).
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
   after the integer bound in `jcs.format_number`; `cli.py` and `ed25519.py` re-measured 2026-11-14 after N60; the 3 sites
   added to `verifier.py` on 2026-11-15 by the negative `aeeDropCount` rule measured on 2026-11-16, all killed):

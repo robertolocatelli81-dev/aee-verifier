@@ -174,7 +174,11 @@ Measured on 0ea2708: a statement, a `subject[0]` and a predicate carrying a memb
 `accept` with nothing in the output. **Choice:** the verdict and the codes do not move; the ignored names are written
 to `notes` (one line per object: statement, `subject[0]`, predicate), so the reader sees what was not read. The
 closed lists are `STATEMENT_MEMBERS`, `RESOURCE_DESCRIPTOR_MEMBERS`, `PREDICATE_MEMBERS` in `verifier.py`; `aee*`
-members keep N39 and are not noted here.
+payload members keep N39. Predicate-level members the spec reserves -- a carried `evidenceTier` and every member whose
+name begins with `aee` (L779–L781: "MUST be ignored and MUST NOT alter the derivation") -- are ignored and, since
+2026-11-20, named in a note of their own (`ignored predicate member(s) the spec reserves, per L779-L781 …`); measured on
+a3e942e: `predicate.aeeInventato` and `predicate.evidenceTier` each gave `accept` with nothing in the output, the only
+ignored members not named. The prefix is matched as written (`Aee…` is an unrecognized member, named as such).
 Since 2026-11-20 the same is done inside the predicate (measured on cbb79e5: an unknown member added to
 `observationEnvironment`, its `catchPolicy`, `coverage`, a row, a record envelope and a signature entry gave
 `accept` with nothing in the output): `NESTED_MEMBERS` in `verifier.py` lists the members of

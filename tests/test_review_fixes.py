@@ -312,12 +312,17 @@ class TestIgnoredMembersAreReported20261010(unittest.TestCase):
         self.assertTrue(any("subject[0] member" in n and "y_unknown_2026" in n for n in notes))
         self.assertTrue(any("predicate member" in n and "z_unknown_2026" in n for n in notes))
 
-    def test_aee_members_keep_their_own_rule_and_are_not_reported_here(self):
+    def test_aee_members_keep_their_own_rule_and_their_own_note(self):
+        # predicate-level aee* members: ignored per L779-L781 (N10); since 2026-11-20 named in a note of their own
+        # (SPEC_NOTES N59), not among the unrecognized members
         st, _ = B.scenario_pass()
-        st["predicate"]["aeeUnknown2026"] = "x"            # predicate-level aee* members: ignored per L779-L781 (N10), not a note
+        st["predicate"]["aeeUnknown2026"] = "x"
         rep = self._rep(st)
-        self.assertEqual(rep.to_json_line()["verdict"], "accept")
+        self.assertEqual(rep.to_json_line(), self._rep(B.scenario_pass()[0]).to_json_line())
         self.assertEqual([n for n in rep.notes if "ignored unrecognized" in n], [])
+        self.assertEqual([n for n in rep.notes if "the spec reserves" in n],
+                         ["ignored predicate member(s) the spec reserves, per L779-L781 (MUST be ignored, MUST NOT alter "
+                          "the derivation): aeeUnknown2026"])
 
 if __name__ == "__main__":
     unittest.main()
