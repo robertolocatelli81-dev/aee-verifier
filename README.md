@@ -65,6 +65,10 @@ Human-readable lines, then **one JSON object on the last line**:
   whose `sig` is base64 of 64 bytes (default 16) is not tried, and verification stops once `AEE_MAX_FAILED_VERIFICATIONS` verifications of the statement
   have failed (default 256); a record left untried verifies nothing, so a row citing it is `unattested` where the spec
   alone (L769–L771) would say `attested`, and a note names the records. A limit never makes a row `attested`.
+  A refinement of `attested` (spec L775–L778, SPEC_NOTES N64) is derived beside the tiers and never enters the JSON
+  line: `attested-sealed`, when a `sealed` record that satisfies its kind and binds to this run also verifies against a
+  pinned key (a caught or reconstructed row does not cite the seal, so its `attested` does not depend on it); a note
+  says whether the attested rows meet it, and `Report.refined_tiers` lists it per row.
 * `primaryCode` (optional in the harness contract): the first condition found,
   except that an unmet sealed-record existence requirement is always primary
   (spec, "Coverage validity").
@@ -167,7 +171,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 262 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 266 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -189,11 +193,11 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   entries the loader does not use are each named in a warning (3000 generated entries), and a member name repeated
   in the policy makes it unusable.
 * `tests/test_fix_20261120.py` (21 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report, and four defects of the first form of these fixes (68c6507: unread members collected in time quadratic in their number; a list of names cut at 160 characters without a word; memory exhausted after the read still a traceback and exit 1; the note on `networkPosture`): a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23); a member name holding a line break forged lines of the human-readable output (N61); an input larger than the memory the process may use ended in a traceback, exit 1 and no JSON line (N61); members nothing reads, inside the predicate's objects, and signature entries that verify nothing were not named (N59); the key policy of N60 was applied by the command line only, not by `Verifier(keys)` used as a library (N60).
-* `tests/test_decisions_20261120.py` (16 tests): the consumer policies decided on 2026-11-20, each test failing on
-  64227ea except two guards (an unhashable `keyid` is no crash; a name that only looks reserved stays an
-  unrecognized member): the input size limit (N62); the signature limits (N63),
+* `tests/test_decisions_20261120.py` (20 tests): the consumer policies decided on 2026-11-20, each test failing on
+  64227ea except three guards (an unhashable `keyid` is no crash; a name that only looks reserved stays an
+  unrecognized member; the refinement leaves the JSON line and the exit status as they were): the input size limit (N62); the signature limits (N63),
   with a generative test (60 statements, random entries, key policies and limits: a limit never adds an attestation and
-  never moves the verdict, the codes or `result`); the note naming the predicate members L779–L781 reserves (N59).
+  never moves the verdict, the codes or `result`); the note naming the predicate members L779–L781 reserves (N59); the refinement `attested-sealed` (N64).
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
   after the integer bound in `jcs.format_number`; `cli.py` and `ed25519.py` re-measured 2026-11-14 after N60; the 3 sites
   added to `verifier.py` on 2026-11-15 by the negative `aeeDropCount` rule measured on 2026-11-16, all killed):

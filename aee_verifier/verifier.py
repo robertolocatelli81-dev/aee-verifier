@@ -102,6 +102,9 @@ ATTRIBUTION_VOCAB = ("pinned", "paired")
 POSTURE_VOCAB = ("allowlist", "no_network", "sinkhole", "unsafe_bypass_egress")
 CHAIN_SCOPE_VOCAB = ("subject", "corpus", "networkPosture")
 COVERING_KINDS = ("interception", "arming", "sealed", "examination")
+# The consumer refinement of `attested` this verifier derives (spec L775-L778: "Consumer policy MAY subdivide
+# `attested` into stricter refinements"; names beginning with `aee` are reserved, this one does not): SPEC_NOTES N64.
+REFINED_ATTESTED = "attested-sealed"
 NON_COVERING_REGISTERED = ("moat-drop", "uncommitted-observation")
 RETIRED_SPELLINGS = ("does_not_assert", "interceptRecords", "interceptRefs")
 
@@ -228,6 +231,10 @@ class Report:
         self.codes: List[Tuple[str, str]] = []
         self.result: Optional[str] = None
         self.tiers: List[str] = []
+        # tiers with the refinement of N64: an `attested` row is "attested-sealed" when a sealed record satisfying its
+        # kind and binding to this run verifies against a pinned key; never in the JSON line, whose `tiers` stay the
+        # spec's three
+        self.refined_tiers: List[str] = []
         self.primary: Optional[str] = None
         self.notes: List[str] = []
 
@@ -545,10 +552,10 @@ class Verifier:
                 rep.fail("run-entropy-digest-malformed", "runEntropy, when present, must carry a lowercase 64-hex sha256 digest")
 
         self._evaluate_payloads(records, env_info, issued_at, manifest_ids, rep)
-        self._cross_checks(records, row_infos, env_info, binding, has_substrate_row, assessed_ids or set(), rep)
+        seals = self._cross_checks(records, row_infos, env_info, binding, has_substrate_row, assessed_ids or set(), rep)
 
         if not rep.rejected:
-            rep.tiers = self._derive_tiers(row_infos, records, rep)
+            rep.tiers = self._derive_tiers(row_infos, records, rep, seals)
 
     # ------------------------------------------------------- environment
     def _verify_environment(self, env: dict, rep: Report) -> dict:
@@ -969,7 +976,8 @@ class Verifier:
 
     # ------------------------------------------------------- cross checks
     def _cross_checks(self, records: List[Record], row_infos: List[dict], env_info: dict,
-                      binding: Optional[str], has_substrate_row: bool, assessed_ids: Set[str], rep: Report) -> None:
+                      binding: Optional[str], has_substrate_row: bool, assessed_ids: Set[str], rep: Report) -> List[Record]:
+        """Returns the sealed records that satisfy every constraint of their kind and bind to this run (L586-L589)."""
         def resolved(info: dict) -> List[Record]:
             # Each record once, in first-reference order: a repeated index adds nothing to any rule below (N23
             # allows repeats), and without this a row repeating indexes k times cost O(k^2) in the arming x sealed
@@ -1025,9 +1033,9 @@ class Verifier:
                             rep.fail("pinned-attribution-unsupported", "attackResults[%d] is pinned but interception record %d carries no commitment value the corpus declared for %r" % (i, rec.index, aid))
 
         if not has_substrate_row:
-            return
+            return []
         if binding is None:
-            return  # already reported: run-binding-not-derivable
+            return []  # already reported: run-binding-not-derivable
 
         bound = [r for r in records if r.usable and r.binding == binding]
 
@@ -1116,9 +1124,10 @@ class Verifier:
             covering = [r for r in recs if r.covering_kind]
             if info["method"] == "intercepted" and any(r.method == "reconstructed" for r in covering):
                 rep.fail("method-cap-violation", "attackResults[%d] declares method: intercepted but a covering record was signed aeeMethod: reconstructed" % i)
+        return valid_seals
 
     # -------------------------------------------------------------- tiers
-    def _derive_tiers(self, row_infos: List[dict], records: List[Record], rep: Report) -> List[str]:
+    def _derive_tiers(self, row_infos: List[dict], records: List[Record], rep: Report, seals: List[Record]) -> List[str]:
         verified_cache: Dict[int, bool] = {}
         keys = self.keys or []
         pinned_ids = set(k[0] for k in keys)
@@ -1173,6 +1182,16 @@ class Verifier:
             covering = [records[i] for i in dict.fromkeys(refs) if records[i].covering_kind]
             attested = bool(self.keys) and bool(covering) and all(record_verifies(r) for r in covering)
             tiers.append("attested" if attested else "unattested")
+        # N64: the refinement is derived after the tiers, so its verifications never decide a tier, under the same
+        # limits (a seal the limits leave untried verifies nothing)
+        attested_rows = [i for i, t in enumerate(tiers) if t == "attested"]
+        sealed_ok = bool(attested_rows) and any(record_verifies(r) for r in seals)
+        rep.refined_tiers = [REFINED_ATTESTED if t == "attested" and sealed_ok else t for t in tiers]
+        if attested_rows:
+            rep.notes.append("refinement %s (consumer policy, spec L775-L778, SPEC_NOTES N64): %s" % (
+                REFINED_ATTESTED, "met by every attested row" if sealed_ok else
+                "not met by attested row(s) %s: no sealed record that satisfies its kind and binds to this run verifies "
+                "against a pinned key" % listed([str(i) for i in attested_rows])))
         if over_cap:
             rep.notes.append("observationRecords %s: more than %d signature entries with a 64-byte sig (limit, SPEC_NOTES "
                              "N63): not tried, "

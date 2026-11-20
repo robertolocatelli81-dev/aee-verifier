@@ -208,7 +208,8 @@ class TestSignatureLimits(unittest.TestCase):
         with CountVerify() as c:
             rep = Verifier(KEYS3, max_failed_verifications=3).verify_bytes(B.dumps(st))
         self.assertEqual(rep.to_json_line()["tiers"], ["attested"] * 30)    # signed by the third key, no keyid
-        self.assertEqual((c.calls, c.failed), (32, 2))                      # the third key is tried first after the first record
+        # the third key is tried first after the first record; the last verification is the seal's, for N64
+        self.assertEqual((c.calls, c.failed), (33, 2))
 
     def test_limits_never_add_an_attestation_generative(self):
         rnd = random.Random(20261120)
@@ -302,9 +303,8 @@ class TestReservedPredicateMembersAreNamed(unittest.TestCase):
                 st["predicate"][n] = rnd.choice(values)
             rep = Verifier(keys).verify_bytes(B.dumps(st))
             self.assertEqual(rep.to_json_line(), base.to_json_line(), chosen)
-            self.assertEqual(rep.notes[:len(base.notes)], base.notes)
+            self.assertEqual([n for n in rep.notes if not n.startswith(self.NOTE)], base.notes)
             self.assertEqual(len(rep.notes), len(base.notes) + 1)
-            self.assertTrue(rep.notes[-1].startswith(self.NOTE), rep.notes[-1])
 
     def test_guard_a_name_that_only_looks_reserved_stays_unrecognized(self):
         for name in ("Aee", "AEEX", "_aee", " aee", "evidencetier", "EvidenceTier"):
@@ -313,6 +313,79 @@ class TestReservedPredicateMembersAreNamed(unittest.TestCase):
             rep = Verifier(KEYS).verify_bytes(B.dumps(st))
             self.assertFalse(any("the spec reserves" in n for n in rep.notes), name)
             self.assertTrue(any("ignored unrecognized predicate member" in n and name in n for n in rep.notes), name)
+
+
+ZERO_SIG = base64.b64encode(bytes(64)).decode()
+
+
+class TestAttestedSealedRefinement(unittest.TestCase):
+    """D3 (N64): a caught or reconstructed row was `attested` while the sealed record the statement must carry (L586-L589)
+    verified against no pinned key (64227ea: the default scenario with the seal's signature zeroed -> tiers attested,
+    unattested, attested, nothing said).  The spec's tier is kept (L766-L775); the refinement is a new, named sub-tier
+    (L775-L778), outside the JSON line.  Guard: the JSON line never moves (passes on 64227ea too)."""
+
+    def _seal_zeroed(self):
+        st, info = B.build()
+        st["predicate"]["observationRecords"][info["index"]["seal"]]["signatures"][0]["sig"] = ZERO_SIG
+        return st
+
+    def test_an_attested_row_without_a_verifying_seal_is_not_attested_sealed_and_is_named(self):
+        rep = Verifier(KEYS).verify_bytes(B.dumps(self._seal_zeroed()))
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested", "unattested", "attested"])     # the spec's tiers, kept
+        self.assertEqual(rep.refined_tiers, ["attested", "unattested", "attested"])
+        self.assertIn("refinement attested-sealed (consumer policy, spec L775-L778, SPEC_NOTES N64): not met by attested "
+                      "row(s) 0, 2: no sealed record that satisfies its kind and binds to this run verifies against a "
+                      "pinned key", rep.notes)
+        ok = Verifier(KEYS).verify_bytes(B.dumps(B.build()[0]))
+        self.assertEqual(ok.refined_tiers, ["attested-sealed"] * 3)
+        self.assertIn("refinement attested-sealed (consumer policy, spec L775-L778, SPEC_NOTES N64): met by every "
+                      "attested row", ok.notes)
+
+    def test_the_refinement_follows_the_seal_signature_generative(self):
+        rnd = random.Random(586)
+        scenarios = [B.scenario_pass, B.scenario_fail, B.scenario_pass_indirect, B.scenario_degraded, B.scenario_artifact_only]
+        seen = __import__("collections").Counter()
+        for _ in range(50):
+            st, info = rnd.choice(scenarios)()
+            for rec in st["predicate"].get("observationRecords", []):
+                if rnd.random() < 0.3:
+                    rec["signatures"][0]["sig"] = ZERO_SIG
+            keys = rnd.choice([None, KEYS, [("k2", B.OTHER_PUB)], KEYS + [("k2", B.OTHER_PUB)]])
+            rep = Verifier(keys).verify_bytes(B.dumps(st))
+            j = rep.to_json_line()
+            self.assertEqual(sorted(j), sorted(k for k in ("verdict", "codes", "result", "tiers", "primaryCode") if k in j))
+            seal_ok = False
+            for rec in st["predicate"].get("observationRecords", []):
+                payload = base64.b64decode(rec["payload"])
+                if b'"aeeKind":"sealed"' in payload and keys:
+                    pae = V.pae(rec["payloadType"], payload)
+                    sig = base64.b64decode(rec["signatures"][0]["sig"])
+                    seal_ok = seal_ok or any(ed25519.verify(pk, pae, sig) for _, pk in keys)
+            self.assertEqual(len(rep.refined_tiers), len(j["tiers"]))
+            for t, r in zip(j["tiers"], rep.refined_tiers):
+                expected = "attested-sealed" if t == "attested" and seal_ok else t
+                self.assertEqual(r, expected, (t, r, seal_ok))
+                seen[(t, r)] += 1
+        self.assertGreater(seen[("attested", "attested-sealed")], 0)
+        self.assertGreater(seen[("attested", "attested")], 0)
+
+    def test_a_seal_the_limits_leave_untried_does_not_refine(self):
+        st, info = B.build()
+        rep = Verifier(KEYS + [("k2", B.OTHER_PUB)], max_failed_verifications=1).verify_bytes(B.dumps(st))
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested"] * 3)
+        self.assertEqual(rep.refined_tiers, ["attested-sealed"] * 3)                 # keyid hint: no failure at all
+        st["predicate"]["observationRecords"][info["index"]["seal"]]["signatures"][0]["keyid"] = "k2"   # wrong hint
+        rep = Verifier(KEYS + [("k2", B.OTHER_PUB)], max_failed_verifications=1).verify_bytes(B.dumps(st))
+        # rows 0, 1, 2 cite int1; arm, seal; exam: the seal's one failed attempt reaches the limit, so the seal and exam
+        # are left untried
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested", "unattested", "unattested"])
+        self.assertEqual(rep.refined_tiers, ["attested", "unattested", "unattested"])
+
+    def test_guard_the_json_line_and_the_exit_status_do_not_move(self):
+        with TempFile(B.dumps(self._seal_zeroed())) as path, tempfile.TemporaryDirectory() as d:
+            proc = run_cli(path, {"AEE_SUBSTRATE_KEYS": B.key_policy_file(os.path.join(d, "k.json"))})
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(last_line(proc), '{"verdict":"accept","codes":[],"result":"fail","tiers":["attested","unattested","attested"]}')
 
 
 if __name__ == "__main__":

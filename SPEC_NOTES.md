@@ -146,7 +146,7 @@ Format: **where** — "quote" — *issue* — **choice**.
 
 **N47. Key algorithm.** README L25–L26: keys arrive as `{"keyid": …, "publicKeyHex": …}`; L1907 (non-normative) `"<ed25519-public-key-bytes>"`. **Choice:** a 32-byte `publicKeyHex` is a raw Ed25519 public key; any other length is skipped with a warning. Verification is RFC 8032 (cofactorless group equation, canonical `s < L`, canonical point encodings).
 
-**N48. "every covering record's signature verifies".** L769–L771. **Choice:** the covering records of a row are the records it resolves whose kind is a covering kind; a record verifies when at least one of its `signatures` verifies against any pinned key (DSSE multi-signature). `keyid` only orders which key is tried first (L1902–L1903 "an unauthenticated lookup hint and never the check itself"). A row with no key policy, or whose covering record does not verify, is `unattested`. Limits on the signatures tried: N63.
+**N48. "every covering record's signature verifies".** L769–L771. **Choice:** the covering records of a row are the records it resolves whose kind is a covering kind; a record verifies when at least one of its `signatures` verifies against any pinned key (DSSE multi-signature). `keyid` only orders which key is tried first (L1902–L1903 "an unauthenticated lookup hint and never the check itself"). A row with no key policy, or whose covering record does not verify, is `unattested`. Limits on the signatures tried: N63; the refinement `attested-sealed`: N64.
 
 **N49. Tier of a fail-closed-basis row.** L767–L769 define `declared` for `basis: artifact` and the other two for `basis: substrate`; a row whose `basis` is out of vocabulary has no tier in the text. **Choice:** `declared` (it "sits at the bottom of both orderings", L1123, where artifact ranks).
 
@@ -268,3 +268,22 @@ answer below the limits): entries whose `keyid` names a pinned key first; for ea
 then the key that verified the last record, then the policy order; an entry whose `sig` is not base64 of 64 bytes is
 not tried. After the change, on the same inputs: 1, 256, 256 verifications (0.09, 0.64,
 1.13 s); the honest statement unchanged (2000, none failed).
+
+**N64. A refinement of `attested`: `attested-sealed` (2026-11-20).** L766–L771: a substrate row is `attested` when every
+covering record's signature verifies; the covering records are those the row resolves (N48). The `sealed` record a
+statement with a substrate row must carry (L586–L589) is a covering record only of the rows that cite it (clean
+intercepted rows), so a caught or reconstructed row is `attested` whatever the seal's signature. Measured on 00db9f1:
+the test builder's default statement with the seal's signature replaced by 64 zero bytes gives the tiers `attested`,
+`unattested`, `attested` and says nothing of the seal. L775–L778: "Consumer policy MAY subdivide `attested` into
+stricter refinements …; a refinement refines, never reorders, the three tiers, and tier names beginning with `aee` are
+reserved." **Choice (decided by Roberto Locatelli on 2026-11-20; the spec's `attested` is not changed):** a new,
+named refinement `attested-sealed`: an `attested` row whose statement carries a `sealed` record that satisfies every
+constraint of its kind, binds to this run and verifies against a pinned key. It is derived after the tiers, under the
+limits of N63, and never moves the verdict, the codes, `result` or `tiers`: the JSON line keeps the spec's three tier
+names (the harness contract compares them), the refined list is `Report.refined_tiers`, and one note says whether
+the attested rows meet it (`refinement attested-sealed …: met by every attested row` / `not met by attested row(s)
+…`). Measured over the whole test suite of 00db9f1 (262 tests, 565 distinct statement and key-policy pairs): the JSON line is identical on
+00db9f1 and with the refinement for all 565; of the 406 `attested` rows, 400 are `attested-sealed` and 6 are not. The
+spec's own test set was not run (not opened for this build: "Sources used" in the README), so whether one of its
+vectors has an `attested` row that is not `attested-sealed` is not measured; by construction its expected tiers are
+unaffected.

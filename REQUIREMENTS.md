@@ -85,6 +85,7 @@ Codes are this verifier's names (the spec defines none); see README.md.
 | L767–L771 | per-row tier: `declared` / `attested` (every covering record verifies against a policy key) / `unattested` | `_derive_tiers` | `tiers` |
 | L772–L774 | no pinned root → every substrate row `unattested`; MUST NOT infer the root from the predicate | keys only from `AEE_SUBSTRATE_KEYS` | — |
 | L774–L775 | tier never alters `result` | recompute independent (tested) | — |
+| L775–L778 | consumer policy MAY subdivide `attested`; refines, never reorders; `aee*` tier names reserved | `attested-sealed` beside the tiers, outside the JSON line (tested; N64) | — |
 | L779–L781 | carried `evidenceTier` / predicate-level `aee*` members MUST be ignored | ignored, and named in a note (tested; N59) | — |
 
 ## G. observationEnvironment (L783–L903)

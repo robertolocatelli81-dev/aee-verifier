@@ -36,13 +36,13 @@ jobs:
           check test_review_fixes 26 "OK"
           check test_interop_20261114 9 "OK"
           check test_fix_20261120 21 "OK"
-          check test_decisions_20261120 16 "OK"
-      - name: The whole suite through discovery (262 tests, as the README states; the only skip is the cryptography oracle)
+          check test_decisions_20261120 20 "OK"
+      - name: The whole suite through discovery (266 tests, as the README states; the only skip is the cryptography oracle)
         run: |
           set -e
           out=$(python -m unittest discover -s tests -p "test_*.py" 2>&1) || { echo "$out"; exit 1; }
           echo "$out" | tail -3
-          echo "$out" | grep -qx "Ran 262 tests in [0-9.]*s" || { echo "::error::discovery did not run 262 tests"; exit 1; }
+          echo "$out" | grep -qx "Ran 266 tests in [0-9.]*s" || { echo "::error::discovery did not run 266 tests"; exit 1; }
           [ "$(echo "$out" | tail -1)" = "OK (skipped=1)" ] || { echo "::error::expected exactly one skipped test (the cryptography oracle)"; exit 1; }
       - name: "The optional cryptography oracle of tests/test_units.py, skipped above, runs with cryptography installed: 27 tests, no skip"
         run: |
