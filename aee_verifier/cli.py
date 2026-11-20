@@ -20,6 +20,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import unicodedata
 from typing import List, Optional, Tuple
 
 from . import ed25519
@@ -27,6 +28,24 @@ from .verifier import Verifier
 
 ENV_KEYS = "AEE_SUBSTRATE_KEYS"
 ENTRY_MEMBERS = ("keyid", "publicKeyHex")
+
+
+def one_line(text: str) -> str:
+    """Text of one human-readable output line, with every character that could end or rewrite a line escaped.
+
+    Notes and messages quote statement text (member names, values): a member name holding "\n" printed as is
+    started a new line of the attacker's choosing, e.g. a forged ``accept:`` line or a forged JSON object above the
+    real last line (measured on cbb79e5, 2026-11-20).  Closed list: Unicode categories Cc (C0/C1 controls, among
+    them CR, LF, VT, FF, ESC, NEL), Zl (U+2028) and Zp (U+2029) -- every line boundary of str.splitlines -- are
+    written as \\xNN or \\uNNNN; nothing else is changed."""
+    out = []
+    for ch in text:
+        if unicodedata.category(ch) in ("Cc", "Zl", "Zp"):
+            o = ord(ch)
+            out.append("\\x%02x" % o if o < 0x100 else "\\u%04x" % o)
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def _no_duplicate_members(pairs):
@@ -92,7 +111,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         pass
 
     def warn(msg: str) -> None:
-        sys.stderr.write("warning: %s\n" % msg)
+        sys.stderr.write("warning: %s\n" % one_line(msg))
 
     def emit(obj: dict) -> None:
         out.write(json.dumps(obj, separators=(",", ":"), ensure_ascii=False) + "\n")
@@ -113,10 +132,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     keys = load_key_policy(os.environ.get(ENV_KEYS), warn)
     report = Verifier(keys).verify_bytes(data)
     for note in report.notes:
-        out.write("note: %s\n" % note)
+        out.write("note: %s\n" % one_line(note))
     if report.rejected:
         for code, msg in report.codes:
-            out.write("reject: %s: %s\n" % (code, msg))
+            out.write("reject: %s: %s\n" % (one_line(code), one_line(msg)))
     else:
         out.write("accept: result=%s tiers=%s (%s)\n" % (
             report.result, ",".join(report.tiers) or "-",

@@ -195,3 +195,9 @@ the policy unusable (no pinned key, with a warning; RFC 7493 2.3, as `strict_jso
 0d8cee1 the last one silently won, so a key could drop out without a word. A `keyid` that is not a string is warned
 about and the key is kept: the keyid is only an ordering hint (`verifier.py`, signature loop); until 0d8cee1 it
 silently became `""`.
+
+**N61. One line per human-readable line (2026-11-20).** The notes and messages quote statement text. Measured on
+cbb79e5: a statement member named `x\naccept: … (forged)\n{"verdict":"accept",…}` put a forged `accept:` line and a
+forged JSON object above the real last line (which stayed right). **Choice:** every character of Unicode
+category Cc, Zl or Zp (they include every line boundary of `str.splitlines`, and ESC) in a note, a message or a
+warning is written as `\xNN` or `\uNNNN` (`cli.one_line`); nothing else is changed.

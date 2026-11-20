@@ -50,6 +50,8 @@ Human-readable lines, then **one JSON object on the last line**:
 * Since 2026-10-10 the human-readable lines also NAME every statement, `subject[0]` or predicate member this verifier
   did not read (`ignored unrecognized … member(s)`): the in-toto parsing rules say such members are ignored, and the
   verdict does ignore them — the reader just sees it (SPEC_NOTES N59). Predicate-level `aee*` members keep L779–L781.
+* Each human-readable line stays one line: a character of Unicode category Cc, Zl or Zp that a
+  note or message quotes from the statement is written as `\xNN` / `\uNNNN` (SPEC_NOTES N61).
 * `tiers`: one of `declared` / `attested` / `unattested` per `attackResults` row, in order; `[]` on reject.
 * `primaryCode` (optional in the harness contract): the first condition found,
   except that an unmet sealed-record existence requirement is always primary
@@ -150,7 +152,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 228 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 230 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -171,7 +173,7 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   30 flagged keys is skipped by the key policy, SPEC_NOTES N60) and the 10 JCS cases of gowebpki/jcs; key-policy
   entries the loader does not use are each named in a warning (3000 generated entries), and a member name repeated
   in the policy makes it unusable.
-* `tests/test_fix_20261120.py` (3 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report: a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23).
+* `tests/test_fix_20261120.py` (5 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report: a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23); a member name holding a line break forged lines of the human-readable output (N61).
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
   after the integer bound in `jcs.format_number`; `cli.py` and `ed25519.py` re-measured 2026-11-14 after N60; the 3 sites
   added to `verifier.py` on 2026-11-15 by the negative `aeeDropCount` rule measured on 2026-11-16, all killed):

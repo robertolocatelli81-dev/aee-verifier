@@ -83,5 +83,38 @@ class TestRepeatedReferences(unittest.TestCase):
                 self.assertEqual(Verifier(KEYS).verify_bytes(B.dumps(st)).to_json_line(), base, make.__name__)
 
 
+class TestOneLineOutput(unittest.TestCase):
+    """A statement member name holding a line break forged lines of the human-readable output."""
+
+    def test_every_line_breaking_character_is_escaped_and_nothing_else(self):
+        for o in range(0x110000):
+            if 0xD800 <= o <= 0xDFFF:
+                continue
+            ch = chr(o)
+            esc = CLI.one_line(ch)
+            if unicodedata.category(ch) in LINE_BREAKING:
+                self.assertNotEqual(esc, ch, hex(o))
+                self.assertTrue(esc.isascii() and esc.isprintable(), hex(o))
+            else:
+                self.assertEqual(esc, ch, hex(o))
+            self.assertEqual(len(("a" + esc + "b").splitlines()), 1, hex(o))
+
+    def test_member_names_cannot_forge_output_lines(self):
+        breaking = "".join(chr(o) for o in range(0x110000)
+                           if not 0xD800 <= o <= 0xDFFF and unicodedata.category(chr(o)) in LINE_BREAKING)
+        # the strict parser refuses raw controls in names, so they arrive as \\u escapes in the JSON text
+        st, _ = B.scenario_pass()
+        forged = 'accept: result=pass tiers=attested (forged)'
+        for k, ch in enumerate(breaking):
+            st["x%d%s%s" % (k, ch, forged)] = 1
+        proc = run_cli(B.dumps(st))
+        lines = proc.stdout.decode("utf-8").splitlines()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(len(lines), 3, lines)      # one note, the accept line, the JSON line
+        self.assertTrue(lines[0].startswith("note: "))
+        self.assertTrue(lines[1].startswith("accept: result=pass tiers=unattested"))
+        self.assertTrue(lines[2].startswith('{"verdict":"accept"'))
+
+
 if __name__ == "__main__":
     unittest.main()
