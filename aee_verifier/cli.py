@@ -7,7 +7,11 @@ compares"): the LAST line of stdout is one JSON object
 (0 = accept, 1 = reject, 2 = the verifier could not run: unreadable input or
 bad invocation).  Human-readable lines precede the JSON line.  An input longer
 than ``AEE_MAX_INPUT_BYTES`` bytes (default 16 MiB, SPEC_NOTES N62) is
-unreadable input: exit 2, code ``unreadable-input``.
+unreadable input: exit 2, code ``unreadable-input``.  The signature limits of
+the tier derivation (SPEC_NOTES N63) are ``AEE_MAX_SIGNATURES_PER_RECORD``
+(default 16) and ``AEE_MAX_FAILED_VERIFICATIONS`` (default 256); a set limit
+variable that is not ASCII decimal digits of value at least 1 is exit 2, code
+``usage``.
 
 The consumer key policy is read from the file named by the environment
 variable ``AEE_SUBSTRATE_KEYS``: ``{"substrateObservationKeys": [{"keyid":
@@ -26,11 +30,13 @@ import unicodedata
 from typing import List, Optional, Tuple
 
 from . import ed25519
-from .verifier import MAX_INPUT_BYTES, InputTooLarge, Verifier
+from .verifier import MAX_FAILED_VERIFICATIONS, MAX_INPUT_BYTES, MAX_SIGNATURES_PER_RECORD, InputTooLarge, Verifier
 
 ENV_KEYS = "AEE_SUBSTRATE_KEYS"
 ENTRY_MEMBERS = ("keyid", "publicKeyHex")
 ENV_MAX_INPUT = "AEE_MAX_INPUT_BYTES"
+ENV_MAX_SIGNATURES = "AEE_MAX_SIGNATURES_PER_RECORD"
+ENV_MAX_FAILED = "AEE_MAX_FAILED_VERIFICATIONS"
 READ_CHUNK = 1 << 20
 
 
@@ -154,6 +160,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 2
     try:
         max_input = limit_from_env(ENV_MAX_INPUT, MAX_INPUT_BYTES)
+        max_signatures = limit_from_env(ENV_MAX_SIGNATURES, MAX_SIGNATURES_PER_RECORD)
+        max_failed = limit_from_env(ENV_MAX_FAILED, MAX_FAILED_VERIFICATIONS)
     except ValueError as exc:
         sys.stderr.write(one_line("error: %s" % exc) + "\n")
         emit({"verdict": "error", "codes": ["usage"], "result": None, "tiers": []})
@@ -170,7 +178,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     keys = load_key_policy(os.environ.get(ENV_KEYS), warn)
     try:
-        report = Verifier(keys, max_input_bytes=max_input).verify_bytes(data)
+        report = Verifier(keys, max_input_bytes=max_input, max_signatures_per_record=max_signatures,
+                          max_failed_verifications=max_failed).verify_bytes(data)
     except MemoryError:
         # the input was read but is larger than the memory left to parse it (measured on 68c6507: 150 MiB under
         # ulimit -v 600000 ended in a traceback and exit 1, the reject status): the same answer as above

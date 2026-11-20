@@ -64,6 +64,15 @@ NOTE_LIST_CHARS = 160
 # honest statement the test builder makes (2000 caught rows, each with its own signed record) is 1.6 MB.
 MAX_INPUT_BYTES = 16 * 1024 * 1024
 
+# Signature limits of the tier derivation (SPEC_NOTES N63, consumer resource policy: DSSE and the spec set none).
+# Measured on 64227ea with three pinned keys: 2000 signature entries that verify nothing on one record cost 6000
+# Ed25519 verifications, 12.4 s for 240.6 kB; the same 6000 spread as 16 entries on each of 125 records cited by 125
+# rows, 12.0 s for 317.5 kB -- a limit per record alone bounds nothing per byte, so the failed verifications of a
+# statement are limited too.  Honest statements measured: 2000 records signed with the right keyid, 2000
+# verifications, none failed.  Real envelopes carry 1 (the spec's examples) or 2 (DSSE's multi-signature example).
+MAX_SIGNATURES_PER_RECORD = 16          # 8 x the most observed (2)
+MAX_FAILED_VERIFICATIONS = 256          # about 0.5 s of failed Ed25519 verifications at 2 ms each (CPython 3.11.2)
+
 
 class InputTooLarge(ValueError):
     """The input exceeds the input size limit: no verdict is derived (the command line exits 2, unreadable-input)."""
@@ -262,9 +271,13 @@ class Report:
 
 
 class Verifier:
-    def __init__(self, keys: Optional[List[Tuple[str, bytes]]] = None, *, max_input_bytes: int = MAX_INPUT_BYTES):
+    def __init__(self, keys: Optional[List[Tuple[str, bytes]]] = None, *, max_input_bytes: int = MAX_INPUT_BYTES,
+                 max_signatures_per_record: int = MAX_SIGNATURES_PER_RECORD,
+                 max_failed_verifications: int = MAX_FAILED_VERIFICATIONS):
         """keys: list of (keyid, raw 32-byte Ed25519 public key); None = no policy.
         max_input_bytes: ``verify_bytes`` raises InputTooLarge on a longer input (SPEC_NOTES N62).
+        max_signatures_per_record, max_failed_verifications: the signature limits of the tier derivation (N63); a
+        record they leave untried verifies nothing, so a limit can only take ``attested`` away, never give it.
 
         The key policy of SPEC_NOTES N60 is applied here, not only in the CLI loader: until 2026-11-20 a caller of this
         class passing the identity point (small order) got every substrate row ``attested`` by signatures made with no
@@ -273,6 +286,8 @@ class Verifier:
         keyid that is not a string is kept as "" (it only orders the keys tried) and named.  ``keys`` itself must be
         None, a list or a tuple (TypeError otherwise)."""
         self.max_input_bytes = positive_limit("max_input_bytes", max_input_bytes)
+        self.max_signatures_per_record = positive_limit("max_signatures_per_record", max_signatures_per_record)
+        self.max_failed_verifications = positive_limit("max_failed_verifications", max_failed_verifications)
         self.key_notes: List[str] = []
         if keys is None:
             self.keys = None
@@ -526,7 +541,7 @@ class Verifier:
         self._cross_checks(records, row_infos, env_info, binding, has_substrate_row, assessed_ids or set(), rep)
 
         if not rep.rejected:
-            rep.tiers = self._derive_tiers(row_infos, records)
+            rep.tiers = self._derive_tiers(row_infos, records, rep)
 
     # ------------------------------------------------------- environment
     def _verify_environment(self, env: dict, rep: Report) -> dict:
@@ -1096,23 +1111,49 @@ class Verifier:
                 rep.fail("method-cap-violation", "attackResults[%d] declares method: intercepted but a covering record was signed aeeMethod: reconstructed" % i)
 
     # -------------------------------------------------------------- tiers
-    def _derive_tiers(self, row_infos: List[dict], records: List[Record]) -> List[str]:
+    def _derive_tiers(self, row_infos: List[dict], records: List[Record], rep: Report) -> List[str]:
         verified_cache: Dict[int, bool] = {}
+        keys = self.keys or []
+        pinned_ids = set(k[0] for k in keys)
+        state = {"failed": 0, "last_ok": None}
+        over_cap: List[int] = []         # records carrying more verifiable signature entries than the limit: not tried
+        untried: List[int] = []          # records left untried once the failed verifications reached their limit
+
+        def key_order(hint) -> list:
+            # cost only, never the outcome: the hinted keys first (L1902-L1903: keyid selects which key to try),
+            # then the key that verified the last record, then the rest in policy order
+            last = state["last_ok"]
+            first = [k for k in keys if k[0] == hint]
+            second = [last] if last is not None and last[0] != hint else []
+            return first + second + [k for k in keys if k[0] != hint and k is not last]
 
         def record_verifies(rec: Record) -> bool:
             if rec.index in verified_cache:
                 return verified_cache[rec.index]
             ok = False
-            if self.keys:
-                for sig in rec.signatures:
-                    raw = decode_base64(sig.get("sig"))
-                    if raw is None:
-                        continue
-                    hint = sig.get("keyid")
-                    ordered = sorted(self.keys, key=lambda k: 0 if k[0] == hint else 1)
-                    if any(ed25519.verify(pk, rec.pae, raw) for _, pk in ordered):
+            sigs = []
+            for sig in rec.signatures if keys else []:
+                raw = decode_base64(sig.get("sig"))
+                hint = sig.get("keyid")
+                if raw is not None and len(raw) == 64:          # any other entry verifies nothing and costs nothing (N59)
+                    sigs.append((0 if isinstance(hint, str) and hint in pinned_ids else 1, hint, raw))
+            if len(sigs) > self.max_signatures_per_record:
+                over_cap.append(rec.index)
+                sigs = []
+            sigs.sort(key=lambda t: t[0])                       # stable: entries hinting a pinned keyid first
+            for _, hint, raw in sigs:
+                for k in key_order(hint):
+                    if state["failed"] >= self.max_failed_verifications:
+                        untried.append(rec.index)
+                        verified_cache[rec.index] = False
+                        return False
+                    if ed25519.verify(k[1], rec.pae, raw):
+                        state["last_ok"] = k
                         ok = True
                         break
+                    state["failed"] += 1
+                if ok:
+                    break
             verified_cache[rec.index] = ok
             return ok
 
@@ -1125,4 +1166,13 @@ class Verifier:
             covering = [records[i] for i in dict.fromkeys(refs) if records[i].covering_kind]
             attested = bool(self.keys) and bool(covering) and all(record_verifies(r) for r in covering)
             tiers.append("attested" if attested else "unattested")
+        if over_cap:
+            rep.notes.append("observationRecords %s: more than %d signature entries with a 64-byte sig (limit, SPEC_NOTES "
+                             "N63): not tried, "
+                             "so they verify nothing and a row citing them is not attested"
+                             % (listed([str(i) for i in over_cap]), self.max_signatures_per_record))
+        if untried:
+            rep.notes.append("signature verification stopped after %d failed attempts (limit, SPEC_NOTES N63): "
+                             "observationRecords %s not tried, so they verify nothing and a row citing them is not "
+                             "attested" % (self.max_failed_verifications, listed([str(i) for i in untried])))
         return tiers

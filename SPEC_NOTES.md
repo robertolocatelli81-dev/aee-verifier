@@ -146,7 +146,7 @@ Format: **where** — "quote" — *issue* — **choice**.
 
 **N47. Key algorithm.** README L25–L26: keys arrive as `{"keyid": …, "publicKeyHex": …}`; L1907 (non-normative) `"<ed25519-public-key-bytes>"`. **Choice:** a 32-byte `publicKeyHex` is a raw Ed25519 public key; any other length is skipped with a warning. Verification is RFC 8032 (cofactorless group equation, canonical `s < L`, canonical point encodings).
 
-**N48. "every covering record's signature verifies".** L769–L771. **Choice:** the covering records of a row are the records it resolves whose kind is a covering kind; a record verifies when at least one of its `signatures` verifies against any pinned key (DSSE multi-signature). `keyid` only orders which key is tried first (L1902–L1903 "an unauthenticated lookup hint and never the check itself"). A row with no key policy, or whose covering record does not verify, is `unattested`.
+**N48. "every covering record's signature verifies".** L769–L771. **Choice:** the covering records of a row are the records it resolves whose kind is a covering kind; a record verifies when at least one of its `signatures` verifies against any pinned key (DSSE multi-signature). `keyid` only orders which key is tried first (L1902–L1903 "an unauthenticated lookup hint and never the check itself"). A row with no key policy, or whose covering record does not verify, is `unattested`. Limits on the signatures tried: N63.
 
 **N49. Tier of a fail-closed-basis row.** L767–L769 define `declared` for `basis: artifact` and the other two for `basis: substrate`; a row whose `basis` is out of vocabulary has no tier in the text. **Choice:** `declared` (it "sits at the bottom of both orderings", L1123, where artifact ranks).
 
@@ -240,3 +240,27 @@ the command line reads the input in chunks of 1 MiB and stops as soon as more th
 `Verifier(keys, max_input_bytes=…)` (same default) raises `InputTooLarge` on a longer input, so the library gives no
 verdict either. The variable, when set, must be ASCII decimal digits of value at least 1; any other value (empty, a
 sign, spaces, other digits, 0) is a bad invocation: exit 2, code `usage`, the variable named on stderr.
+
+**N63. Signature limits of the tier derivation (2026-11-20).** L769–L771 make a substrate row `attested` when every
+covering record's signature verifies against a pinned key; DSSE (envelope.md "Multiple signatures", protocol.md
+"Multi-signature Verification", read 2026-11-20 at secure-systems-lab/dsse `master`) lets an envelope carry any number of
+signatures and sets no limit, and neither does the spec. Measured on 64227ea (CPython 3.11.2, three pinned keys; under
+N48 each entry was tried against every key): 2000 entries that verify nothing and one good one on a record cost 6002
+Ed25519 verifications, 12.4 s for 240.6 kB; the same 6000 failed verifications spread as 16 entries on each of 125
+records, cited by 125 caught rows, 12.0 s for 317.5 kB; as one entry on each of 2000 records, 12.5 s for 1.56 MB. A limit
+per record alone therefore bounds nothing per byte. An honest statement of 2000 records signed with the right keyid
+costs 2000 verifications and no failed one (8.5 s for 1.58 MB). Envelopes seen: one signature per record in the spec's
+examples (L362–L376), two in DSSE's multi-signature example. **Choice (a consumer resource policy, decided by Roberto
+Locatelli on 2026-11-20):** (a) a record carrying more than `max_signatures_per_record` signature entries whose `sig` is base64 of 64 bytes
+(default 16, 8 times the most seen; `AEE_MAX_SIGNATURES_PER_RECORD`; the other entries cost nothing and verify nothing,
+N59, so they do not count) is not tried: it verifies nothing; (b) once
+`max_failed_verifications` Ed25519 verifications of one statement have failed (default 256, about 0.5 s at 2 ms each;
+`AEE_MAX_FAILED_VERIFICATIONS`), nothing more is tried and every record not yet decided verifies nothing. Each case is
+named in a note with the records it left untried. A limit can only take `attested` away (the row becomes `unattested`),
+never give it; the verdict, the codes and `result` do not move. **This departs from L769–L771** for a statement over a
+limit: there a row the spec would call `attested` is `unattested` (fail-closed, and named). Raising both limits above
+the statement's counts restores the spec's derivation exactly. Order of the attempts (cost only: any order gives the same
+answer below the limits): entries whose `keyid` names a pinned key first; for each entry the keys of that keyid first,
+then the key that verified the last record, then the policy order; an entry whose `sig` is not base64 of 64 bytes is
+not tried. After the change, on the same inputs: 1, 256, 256 verifications (0.09, 0.64,
+1.13 s); the honest statement unchanged (2000, none failed).
