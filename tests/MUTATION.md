@@ -16,10 +16,15 @@ were not run again. Survivor line numbers below L800 are unchanged, above it the
 2026-11-20: the fixes of `tests/test_fix_20261120.py` added lines to `verifier.py` and `cli.py`. The table below still
 gives the counts measured on cbb79e5; on this tree `tests/mutate.py` finds 574 sites in `verifier.py` and 30 in
 `cli.py` (911 in the six modules), and only the sites on the changed lines were run (last section: 27 and 5); the
-others were not run again. The survivor lines of `verifier.py` and `cli.py` below are renumbered to this tree
-(same code, moved lines); two rows of cbb79e5 are gone: L833 (`and` → `or` in the `resolved()` range filter: the
+others were not run again. Then the decisions of the same day (`tests/test_decisions_20261120.py`, SPEC_NOTES N62-N64)
+changed `verifier.py` and `cli.py` again: on this tree `tests/mutate.py` finds 612 sites in `verifier.py` and 44 in
+`cli.py` (963 in the six modules), and the sites on the lines they changed were run (last section: 45 and 15).
+The survivor lines of `verifier.py` and `cli.py` below are renumbered to this tree
+(same code, moved lines; renumbered with a line-by-line match of the sources of 64227ea and of this tree). The four
+`L1091` survivors of cbb79e5 (key ordering by the `keyid` hint, equivalent then) are gone: that loop was rewritten by
+N63 and its new sites are run in the last section. Two more rows of cbb79e5 are gone: L833 (`and` → `or` in the `resolved()` range filter: the
 line was rewritten and its mutant is now killed) and L948 (`all` → `any` on seal-vs-arming posture: rewritten, now
-L1063 in the last section).
+L1114 in the section of `tests/test_fix_20261120.py`).
 Earlier: 2026-10-08 after the review fixes and the builder's follow-up fix
 (interception without `aeeMethod`), 863 / 819 / 44; the first build,
 fea61aa, 846 / 802 / 44; the reviewed series alone, 861 / 817 / 44.
@@ -57,23 +62,22 @@ test as well.
 
 Line numbers refer to the committed sources.
 
-### `verifier.py` (23 of the 25 of cbb79e5; lines of this tree)
+### `verifier.py` (19 of the 25 of cbb79e5; lines of this tree)
 
 | Line | Mutation | Class | Why it survives |
 |------|----------|-------|-----------------|
-| L111 | `<=` → `<` in `is_bmp` | equivalent | U+FFFF is a noncharacter, already rejected by the parser; no string reaching `is_bmp` contains it. |
-| L137 | `validate=True` → `False` | equivalent | The regexes above it are anchored with `\Z` and admit only the alphabet plus up to two `=`; `validate` has nothing left to reject (490,000 sampled strings agree). |
-| L179 | `reserved_ok = False` initial → `True` | equivalent | Overwritten whenever the payload parses; `usable` also requires `parsed is not None`. |
-| L594, L597, L626, L655 | `ok = False` → `True` | verdict-equivalent | Short-circuit flags inside the environment and coverage checks; the failing code is already recorded, continuing only adds codes. |
-| L672 | `counts.get(c, 0)` → `get(c, 1)` in the message `%d` | message-only | The condition is on the line above; this is the count printed in the message. |
-| L673 | `partition_ok = False` → `True` | verdict-equivalent | The partition violation is already recorded; continuing runs coverage integrity too. |
-| L742 | `ok = False` → `True` after a signatures defect | verdict-equivalent | `observation-records-malformed` already recorded; PAE bytes are still computable because payload/payloadType were valid in that branch. |
-| L797 | `and` → `or` in the kind-check guard | equivalent | A record without a parsed payload has `parse_problem` set and no kind, so no new record reaches `_check_kind` with `parsed` unset; the problems it records on other records are read only through `parse_problem is None` / `usable` gates. |
-| L807, L810 | `or` → `and` on `parse_problem` text | message-only | Selects which description is kept. |
-| L1037 | `or` → `and` in a message | message-only | Fallback text of `referenced-record-unparseable`. |
-| L1038, L1041, L1043 | `row_ok = False` → `True` | verdict-equivalent | The code is recorded before the flag; continuing runs class-match on the same row and adds codes. |
-| L1048, L1070 | `unknown` list / `elif unknown` with `or` | diagnostic-only | Only changes when the auxiliary `row-resolves-unrecognised-kind` code is added beside `class-match-failed`. |
-| L1091 (×4) | key ordering by `keyid` hint | equivalent | The hint only orders the attempts; every pinned key is tried. |
+| L140 | `<=` → `<` in `is_bmp` | equivalent | U+FFFF is a noncharacter, already rejected by the parser; no string reaching `is_bmp` contains it. |
+| L166 | `validate=True` → `False` | equivalent | The regexes above it are anchored with `\Z` and admit only the alphabet plus up to two `=`; `validate` has nothing left to reject (490,000 sampled strings agree). |
+| L208 | `reserved_ok = False` initial → `True` | equivalent | Overwritten whenever the payload parses; `usable` also requires `parsed is not None`. |
+| L644, L647, L676, L705 | `ok = False` → `True` | verdict-equivalent | Short-circuit flags inside the environment and coverage checks; the failing code is already recorded, continuing only adds codes. |
+| L722 | `counts.get(c, 0)` → `get(c, 1)` in the message `%d` | message-only | The condition is on the line above; this is the count printed in the message. |
+| L723 | `partition_ok = False` → `True` | verdict-equivalent | The partition violation is already recorded; continuing runs coverage integrity too. |
+| L792 | `ok = False` → `True` after a signatures defect | verdict-equivalent | `observation-records-malformed` already recorded; PAE bytes are still computable because payload/payloadType were valid in that branch. |
+| L847 | `and` → `or` in the kind-check guard | equivalent | A record without a parsed payload has `parse_problem` set and no kind, so no new record reaches `_check_kind` with `parsed` unset; the problems it records on other records are read only through `parse_problem is None` / `usable` gates. |
+| L857, L860 | `or` → `and` on `parse_problem` text | message-only | Selects which description is kept. |
+| L1088 | `or` → `and` in a message | message-only | Fallback text of `referenced-record-unparseable`. |
+| L1089, L1092, L1094 | `row_ok = False` → `True` | verdict-equivalent | The code is recorded before the flag; continuing runs class-match on the same row and adds codes. |
+| L1099, L1121 | `unknown` list / `elif unknown` with `or` | diagnostic-only | Only changes when the auxiliary `row-resolves-unrecognised-kind` code is added beside `class-match-failed`. |
 
 ### `strict_json.py` (4)
 
@@ -110,8 +114,8 @@ Line numbers refer to the committed sources.
 
 | Line | Mutation | Class | Why it survives |
 |------|----------|-------|-----------------|
-| L117 | `ensure_ascii=False` → `True` | equivalent | Produces an escaped but JSON-identical last line. |
-| L152 | `or "-"` → `and "-"` | message-only | Human-readable accept line only. |
+| L154 | `ensure_ascii=False` → `True` | equivalent | Produces an escaped but JSON-identical last line. |
+| L197 | `or "-"` → `and "-"` | message-only | Human-readable accept line only. |
 
 ### Lines changed on 2026-11-20 (`tests/test_fix_20261120.py`) (3)
 
@@ -120,6 +124,24 @@ cbb79e5: `verifier.py` 27 sites, 25 killed; `cli.py` 5 sites, 4 killed.
 
 | Line | Mutation | Class | Why it survives |
 |------|----------|-------|-----------------|
-| verifier.py L1060 | `not in arming_postures` → `in` | equivalent | The list stays empty, `all()` over it is true; every arming and sealed record that is `kind_valid` already carries the pinned posture digest (`_check_kind`), so the comparison never decides (the reason the `all` → `any` survivor of this comparison had on cbb79e5, L948 there). A differential run of 400 generated statements (115 accepted) gave identical JSON lines and codes; the non-equivalent `==` → `!=` on L1063 differed on 146. |
-| verifier.py L1063 | `all` → `any` on seal-vs-arming posture | equivalent | At most one distinct posture reaches the list (same reason); `any` and `all` agree on one element, and `bool(armings)` decides the empty case. Same differential: identical. |
-| cli.py L45 | `o < 0x100` → `o <= 0x100` | equivalent | U+0100 is a letter (Lu): no character of Cc, Zl or Zp has code point 0x100 (the test over every code point passes on the mutant). |
+| verifier.py L1111 | `not in arming_postures` → `in` | equivalent | The list stays empty, `all()` over it is true; every arming and sealed record that is `kind_valid` already carries the pinned posture digest (`_check_kind`), so the comparison never decides (the reason the `all` → `any` survivor of this comparison had on cbb79e5, L948 there). A differential run of 400 generated statements (115 accepted) gave identical JSON lines and codes; the non-equivalent `==` → `!=` on L1114 differed on 146. |
+| verifier.py L1114 | `all` → `any` on seal-vs-arming posture | equivalent | At most one distinct posture reaches the list (same reason); `any` and `all` agree on one element, and `bool(armings)` decides the empty case. Same differential: identical. |
+| cli.py L82 | `o < 0x100` → `o <= 0x100` | equivalent | U+0100 is a letter (Lu): no character of Cc, Zl or Zp has code point 0x100 (the test over every code point passes on the mutant). |
+
+### Lines changed by the decisions of 2026-11-20 (`tests/test_decisions_20261120.py`) (4)
+
+Measured on CPython 3.11.2 (`nice -n 19`, one job) with the operators of `tests/mutate.py`, restricted to the lines
+that differ from 64227ea: `verifier.py` 45 sites, 39 killed by the suite of the first run; of the 6 survivors, 5 were
+killed by three tests then added (`test_each_key_is_tried_once_per_entry`,
+`test_entries_hinting_a_pinned_keyid_are_tried_first`, `test_one_verifying_seal_is_enough`; re-run with the whole
+suite): 44 killed, 1 survived. `cli.py` 15 sites, 12 killed, 3 survived. The 4 survivors are equivalent, shown three ways
+each: reading, the outcome below, and a differential run against the unmutated code
+(`equiv_mutanti.py` in the measurement folder of 2026-11-20): 0 differences, while the non-equivalent mutants used as
+positive controls differ (`verifier.py` L1159 `t[0]` → `t[1]`: 48 of 150 statements; `cli.py` L66 `>` → `>=`: 7 of
+96 cases).
+
+| Line | Mutation | Class | Why it survives |
+|------|----------|-------|-----------------|
+| verifier.py L1155 | sort key `1` → `2` for an entry whose `keyid` names no pinned key | equivalent | The key only orders the entries, pinned hints (`0`) first; `0 < 2` orders them as `0 < 1` does. Differential: 150 generated statements, identical JSON line, refinement, notes and number of verifications. |
+| cli.py L40 | `1 << 20` → `2 << 20`, `1 << 20` → `1 << 21` (read chunk) | equivalent | The chunk only sets how much one `read` asks for; each read is also capped at `limit + 1 - total`, so the bytes read and the moment `InputTooLarge` is raised do not depend on it. Differential: 96 file sizes x limits around 1 and 2 MiB, identical results. |
+| cli.py L61 | `limit + 1 - total` → `limit + 2 - total` | equivalent | One byte more may be read before `total > limit` raises; the file is refused exactly when it is longer than the limit either way. Same differential: identical. |

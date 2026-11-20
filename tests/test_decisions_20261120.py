@@ -41,7 +41,7 @@ def fake(i):
 
 def caught_rows(n, fakes, good_last=False):
     """n caught substrate rows, row i citing its own interception record i carrying `fakes` entries that verify nothing;
-    with good_last the last record keeps its good signature after them."""
+    with good_last the last record keeps its good signature after them; with no fakes every record is signed as built."""
     ids = ["A-%05d" % i for i in range(n)]
     recs = [{"name": "i%d" % i, "kind": "interception", "commitment": [B.h("c%d" % i)]} for i in range(n)]
     recs.append({"name": "seal", "kind": "sealed"})
@@ -49,7 +49,7 @@ def caught_rows(n, fakes, good_last=False):
              "attribution": "paired", "actualLayer": "policy.egress_sinkhole", "refs": ["i%d" % i]} for i, a in enumerate(ids)]
     st, _ = B.build(classes={"CO": ids}, expectedPayloads=None, assessedClasses=["CO"], records=recs, rows=rows,
                     observedAttacks=[])
-    for i, rec in enumerate(st["predicate"]["observationRecords"][:n]):
+    for i, rec in enumerate(st["predicate"]["observationRecords"][:n] if fakes else []):   # fakes=0: signed as built
         good = rec["signatures"]
         rec["signatures"] = [fake(j) for j in range(fakes)] + (good if good_last and i == n - 1 else [])
     return st
@@ -211,6 +211,28 @@ class TestSignatureLimits(unittest.TestCase):
         # the third key is tried first after the first record; the last verification is the seal's, for N64
         self.assertEqual((c.calls, c.failed), (33, 2))
 
+    def test_each_key_is_tried_once_per_entry(self):
+        # records 0 and 2: one entry that verifies nothing, hinting the pinned keyid; record 1: signed by that key.
+        # Each key once per entry: 3 failures for record 0 (no key verified yet) and 3 for record 2 (after the hinted
+        # key verified record 1); trying a key twice costs one more failure each time
+        st = caught_rows(3, 0)
+        for i in (0, 2):
+            st["predicate"]["observationRecords"][i]["signatures"] = [dict(fake(i), keyid=B.SUBSTRATE_KEYID)]
+        with CountVerify() as c:
+            rep = Verifier(KEYS3).verify_bytes(B.dumps(st))
+        self.assertEqual(rep.to_json_line()["tiers"], ["unattested", "attested", "unattested"])
+        self.assertEqual((c.calls, c.failed), (8, 6))                       # + 1 call for the seal (N64)
+
+    def test_entries_hinting_a_pinned_keyid_are_tried_first(self):
+        st, _ = B.scenario_pass()
+        for rec in st["predicate"]["observationRecords"]:
+            # an entry hinting an unpinned keyid that sorts before the pinned one, then one with no keyid: tried after
+            rec["signatures"] = [dict(fake(1), keyid="a-unpinned"), {"sig": fake(2)["sig"]}] + rec["signatures"]
+        with CountVerify() as c:
+            rep = Verifier(KEYS).verify_bytes(B.dumps(st))
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested"] * 3)
+        self.assertEqual(c.failed, 0)
+
     def test_limits_never_add_an_attestation_generative(self):
         rnd = random.Random(20261120)
         policies = [KEYS, KEYS3, [("k2", B.OTHER_PUB)], [("substrate-2026", THIRD_PUB), ("other", B.SUBSTRATE_PUB)]]
@@ -368,6 +390,15 @@ class TestAttestedSealedRefinement(unittest.TestCase):
                 seen[(t, r)] += 1
         self.assertGreater(seen[("attested", "attested-sealed")], 0)
         self.assertGreater(seen[("attested", "attested")], 0)
+
+    def test_one_verifying_seal_is_enough(self):
+        recs = B.DEFAULT["records"] + [{"name": "seal2", "kind": "sealed", "extra": {"n": 2}}]
+        for zeroed, refined in (("seal2", "attested-sealed"), ("seal", "attested-sealed")):   # either verifying seal is enough
+            st, info = B.build(records=recs)
+            st["predicate"]["observationRecords"][info["index"][zeroed]]["signatures"][0]["sig"] = ZERO_SIG
+            rep = Verifier(KEYS).verify_bytes(B.dumps(st))
+            self.assertEqual(rep.to_json_line()["verdict"], "accept", rep.codes)
+            self.assertEqual(rep.refined_tiers[0], refined, zeroed)
 
     def test_a_seal_the_limits_leave_untried_does_not_refine(self):
         st, info = B.build()
