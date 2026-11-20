@@ -88,7 +88,7 @@ Format: **where** — "quote" — *issue* — **choice**.
 
 **N22. "MUST declare `paired`".** L618–L619 "A row whose `attackId` carries no such entry MUST declare `paired`." **Choice:** enforced as "must not declare `pinned`" (the pinned rule's second part); an out-of-vocabulary attribution there is handled by N21, not as a second violation.
 
-**N23. `observationRefs`.** Optional on rows that are not `basis: substrate` (L947–L948 "Wherever `observationRefs` is present"); when present it must be an array of integers (a JSON `1.0` or `true` is not an integer index) and every index in range (L947–L952), on any row. Duplicate indexes are not forbidden. `observationSelectors` (L953–L958) is not read at all, not even for its type: "nothing normative reads it".
+**N23. `observationRefs`.** Optional on rows that are not `basis: substrate` (L947–L948 "Wherever `observationRefs` is present"); when present it must be an array of integers (a JSON `1.0` or `true` is not an integer index) and every index in range (L947–L952), on any row. Duplicate indexes are not forbidden; since 2026-11-20 a repeated index resolves its record once (no rule reads how often an index repeats; measured on cbb79e5 with a row citing its two records 1000, 2000 and 20000 times each: 0.093 s, 0.34 s and 35.89 s, the arming-against-seal comparison being quadratic; 0.07 s for the last with the fix). `observationSelectors` (L953–L958) is not read at all, not even for its type: "nothing normative reads it".
 
 **N24. Rows of invalid shape.** `attackId` not a string → malformed (`row-attack-id-malformed`); not in the manifest → malformed (L919 "must appear in the manifest"), beside the coverage-integrity failure that follows.
 

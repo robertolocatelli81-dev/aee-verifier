@@ -150,7 +150,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 225 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 228 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -171,6 +171,7 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   30 flagged keys is skipped by the key policy, SPEC_NOTES N60) and the 10 JCS cases of gowebpki/jcs; key-policy
   entries the loader does not use are each named in a warning (3000 generated entries), and a member name repeated
   in the policy makes it unusable.
+* `tests/test_fix_20261120.py` (3 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report: a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23).
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
   after the integer bound in `jcs.format_number`; `cli.py` and `ed25519.py` re-measured 2026-11-14 after N60; the 3 sites
   added to `verifier.py` on 2026-11-15 by the negative `aeeDropCount` rule measured on 2026-11-16, all killed):

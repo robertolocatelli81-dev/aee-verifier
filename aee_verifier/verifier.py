@@ -827,10 +827,19 @@ class Verifier:
     def _cross_checks(self, records: List[Record], row_infos: List[dict], env_info: dict,
                       binding: Optional[str], has_substrate_row: bool, assessed_ids: Set[str], rep: Report) -> None:
         def resolved(info: dict) -> List[Record]:
+            # Each record once, in first-reference order: a repeated index adds nothing to any rule below (N23
+            # allows repeats), and without this a row repeating indexes k times cost O(k^2) in the arming x sealed
+            # comparison (SPEC_NOTES N23, measured on cbb79e5).
             refs = info["refs"]
             if refs is None:
                 return []
-            return [records[i] for i in refs if is_int(i) and 0 <= i < len(records)]
+            seen: Set[int] = set()
+            out: List[Record] = []
+            for i in refs:
+                if is_int(i) and 0 <= i < len(records) and i not in seen:
+                    seen.add(i)
+                    out.append(records[i])
+            return out
 
         # every carried sealed record's aeeObservedSet must equal the recompute
         for rec in records:
@@ -865,9 +874,9 @@ class Verifier:
                 if not isinstance(entry, list):
                     rep.fail("pinned-attribution-unsupported", "attackResults[%d] declares attribution: pinned but corpus.manifest.expectedPayloads carries no entry for %r (such a row MUST declare paired)" % (i, aid))
                 else:
+                    declared = set(x for x in entry if isinstance(x, str))  # a malformed entry is reported elsewhere
                     for rec in inter:
                         pc = rec.parsed.get("aeePayloadCommitment") if rec.parsed else None
-                        declared = set(x for x in entry if isinstance(x, str))  # a malformed entry is reported elsewhere
                         if not (isinstance(pc, list) and set(x for x in pc if isinstance(x, str)) & declared):
                             rep.fail("pinned-attribution-unsupported", "attackResults[%d] is pinned but interception record %d carries no commitment value the corpus declared for %r" % (i, rec.index, aid))
 
@@ -944,8 +953,13 @@ class Verifier:
                 what = "at least one interception record"
             else:
                 armings = [r for r in kinds_valid if r.kind == "arming"]
+                # distinct arming postures, compared once per seal (a list, not a set: the values are not assumed hashable)
+                arming_postures: list = []
+                for a in armings:
+                    if a.parsed.get("aeePostureDigest") not in arming_postures:
+                        arming_postures.append(a.parsed.get("aeePostureDigest"))
                 seals = [r for r in kinds_valid if r.kind == "sealed"
-                         and all(r.parsed.get("aeePostureDigest") == a.parsed.get("aeePostureDigest") for a in armings)]
+                         and all(r.parsed.get("aeePostureDigest") == ap for ap in arming_postures)]
                 need = bool(armings) and bool(seals)
                 what = "at least one arming record and at least one covering sealed record"
             if not need:
@@ -986,7 +1000,7 @@ class Verifier:
                 tiers.append("declared")
                 continue
             refs = info["refs"] or []
-            covering = [records[i] for i in refs if records[i].covering_kind]
+            covering = [records[i] for i in dict.fromkeys(refs) if records[i].covering_kind]
             attested = bool(self.keys) and bool(covering) and all(record_verifies(r) for r in covering)
             tiers.append("attested" if attested else "unattested")
         return tiers
