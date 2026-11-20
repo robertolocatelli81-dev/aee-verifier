@@ -116,5 +116,21 @@ class TestOneLineOutput(unittest.TestCase):
         self.assertTrue(lines[2].startswith('{"verdict":"accept"'))
 
 
+@unittest.skipUnless(sys.platform.startswith("linux") and os.path.exists("/dev/zero"), "needs /dev/zero and RLIMIT_AS")
+class TestUnreadableInput(unittest.TestCase):
+    """An input larger than the memory the process may use ended in a traceback, exit 1, no JSON line."""
+
+    def test_input_beyond_the_memory_limit_is_exit_2_with_the_json_line(self):
+        import resource
+
+        def limit():
+            resource.setrlimit(resource.RLIMIT_AS, (600 * 1024 * 1024, 600 * 1024 * 1024))
+
+        proc = run_cli(b"", preexec=limit, path="/dev/zero")
+        self.assertEqual(proc.returncode, 2, proc.stderr[-300:])
+        self.assertEqual(proc.stdout.decode().splitlines()[-1],
+                         '{"verdict":"error","codes":["unreadable-input"],"result":null,"tiers":[]}')
+
+
 if __name__ == "__main__":
     unittest.main()

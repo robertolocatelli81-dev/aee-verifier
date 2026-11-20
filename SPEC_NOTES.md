@@ -201,3 +201,6 @@ cbb79e5: a statement member named `x\naccept: … (forged)\n{"verdict":"accept",
 forged JSON object above the real last line (which stayed right). **Choice:** every character of Unicode
 category Cc, Zl or Zp (they include every line boundary of `str.splitlines`, and ESC) in a note, a message or a
 warning is written as `\xNN` or `\uNNNN` (`cli.one_line`); nothing else is changed.
+An input larger than the memory the process may use (measured on cbb79e5 with `/dev/zero` under
+`ulimit -v 600000`: MemoryError traceback, exit 1 — the reject status — and no JSON line) is unreadable
+input: exit 2, code `unreadable-input`, as for an OSError. No size limit is set (that is a choice still open).

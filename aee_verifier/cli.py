@@ -124,8 +124,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     try:
         with open(argv[0], "rb") as fh:
             data = fh.read()
-    except OSError as exc:
-        sys.stderr.write("error: cannot read %s: %s\n" % (argv[0], exc))
+    except (OSError, MemoryError) as exc:
+        # MemoryError: an input larger than the memory the process may use (an endless device such as /dev/zero,
+        # or a huge file) ended in a traceback, exit 1 -- the reject status -- and no JSON line (measured on
+        # cbb79e5 under ulimit -v 600000, 2026-11-20); it is input the verifier could not read: exit 2, as documented.
+        sys.stderr.write(one_line("error: cannot read %s: %s" % (argv[0], exc if str(exc) else type(exc).__name__)) + "\n")
         emit({"verdict": "error", "codes": ["unreadable-input"], "result": None, "tiers": []})
         return 2
 
