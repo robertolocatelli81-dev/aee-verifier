@@ -17,15 +17,16 @@ were not run again. Survivor line numbers below L800 are unchanged, above it the
 gives the counts measured on cbb79e5; on this tree `tests/mutate.py` finds 574 sites in `verifier.py` and 30 in
 `cli.py` (911 in the six modules), and only the sites on the changed lines were run (last section: 27 and 5); the
 others were not run again. Then the decisions of the same day (`tests/test_decisions_20261120.py`, SPEC_NOTES N62-N64)
-changed `verifier.py` and `cli.py` again: on this tree `tests/mutate.py` finds 618 sites in `verifier.py` and 46 in
-`cli.py` (971 in the six modules), and the sites on the lines they changed were run (last section: 45 and 15; then
+changed `verifier.py` and `cli.py` again: on this tree `tests/mutate.py` finds 620 sites in `verifier.py` and 46 in
+`cli.py` (973 in the six modules), and the sites on the lines they changed were run (last section: 45 and 15; then
 SPEC_NOTES N65, the signatures of the records that cover nothing: 3 sites, 3 killed; then, on 2026-11-21, the limit
 variables read 4000 digits at a time in `cli.py`: 7 sites on the changed lines, 7 killed; then, the same day, the
 counting rule of N63 (the failed attempts of a record that verifies are not counted, the limit checked before a
 record): 7 sites on the changed lines of `verifier.py`, 6 killed by the suite of that change and the seventh, an
 untried record cached as verified, by a test then added: 7 killed; then, the same day, the second form of that rule
 (the entries that verify nothing are counted also on a record that verifies, but for one): 3 sites on the changed lines
-of `verifier.py`, 3 killed).
+of `verifier.py`, 3 killed; then, for 0.2.0, the counts in the note of that limit: 4 sites on the changed lines of
+`verifier.py`, 4 killed).
 The survivor lines of `verifier.py` and `cli.py` below are renumbered to this tree
 (same code, moved lines; renumbered with a line-by-line match of the sources of 64227ea and of this tree). The four
 survivors of cbb79e5 at L1091 of 64227ea (key ordering by the `keyid` hint, equivalent then) are gone: that loop was rewritten by
@@ -144,11 +145,11 @@ killed by three tests then added (`test_each_key_is_tried_once_per_entry`,
 suite): 44 killed, 1 survived. `cli.py` 15 sites, 12 killed, 3 survived. The 4 survivors are equivalent, shown three ways
 each: reading, the outcome below, and a differential run against the unmutated code
 (`equiv_mutanti.py` in the measurement folder of 2026-11-20): 0 differences, while the non-equivalent mutants used as
-positive controls differ (`verifier.py` L1162 `t[0]` → `t[1]`: 48 of 150 statements; `cli.py` L74 `>` → `>=`: 7 of
+positive controls differ (`verifier.py` L1164 `t[0]` → `t[1]`: 48 of 150 statements; `cli.py` L74 `>` → `>=`: 7 of
 96 cases).
 
 | Line | Mutation | Class | Why it survives |
 |------|----------|-------|-----------------|
-| verifier.py L1158 | sort key `1` → `2` for an entry whose `keyid` names no pinned key | equivalent | The key only orders the entries, pinned hints (`0`) first; `0 < 2` orders them as `0 < 1` does. Differential: 150 generated statements, identical JSON line, refinement, notes and number of verifications. |
+| verifier.py L1160 | sort key `1` → `2` for an entry whose `keyid` names no pinned key | equivalent | The key only orders the entries, pinned hints (`0`) first; `0 < 2` orders them as `0 < 1` does. Differential: 150 generated statements, identical JSON line, refinement, notes and number of verifications. |
 | cli.py L40 | `1 << 20` → `2 << 20`, `1 << 20` → `1 << 21` (read chunk) | equivalent | The chunk only sets how much one `read` asks for; each read is also capped at `limit + 1 - total`, so the bytes read and the moment `InputTooLarge` is raised do not depend on it. Differential: 96 file sizes x limits around 1 and 2 MiB, identical results. |
 | cli.py L69 | `limit + 1 - total` → `limit + 2 - total` | equivalent | One byte more may be read before `total > limit` raises; the file is refused exactly when it is longer than the limit either way. Same differential: identical. |

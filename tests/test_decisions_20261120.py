@@ -336,8 +336,9 @@ class TestSignatureLimits(unittest.TestCase):
                 one = run_cli(path, dict(base, AEE_MAX_FAILED_VERIFICATIONS=value))
                 self.assertEqual(one.returncode, 0, one.stderr[-200:])
                 self.assertIn('"tiers":["unattested","unattested"]', last_line(one))
-                self.assertIn(b"had 1 or more failed attempts (limit, SPEC_NOTES N63): observationRecords 1 not tried",
-                              one.stdout)
+                self.assertIn(b"had 1 or more failed attempts (limit, SPEC_NOTES N63): 1 entries that verified nothing "
+                              b"were counted, 0 of them on records another entry then verified", one.stdout)
+                self.assertIn(b"; observationRecords 1 not tried", one.stdout)
 
     def test_a_record_left_untried_is_named_once_and_asked_once(self):
         # row 0 cites the seal first, whose only entry verifies nothing (1 failure: the limit); rows 1 and 2 cite the
@@ -456,6 +457,38 @@ class TestSignatureLimits(unittest.TestCase):
         self.assertLessEqual(c.calls, 5 * 15 * 4 + 5 * 4)
         self.assertTrue(any("had 256 or more failed attempts" in x and "observationRecords 5, 6, " in x for x in rep.notes),
                         rep.notes)
+
+    def test_the_limit_note_says_which_case_reached_it(self):
+        # (a) entries on records that then verify (an envelope with several signatures whose keyid names no pinned
+        # key): 15 such entries before the good one on each of 40 records, 14 counted on each, 5 records tried;
+        # (b) records that verify nothing: 16 entries on each of 125 records, 6 records tried
+        head = "signature verification stopped once the counted signature entries had 256 or more failed attempts " \
+               "(limit, SPEC_NOTES N63): "
+        seeds = [bytes(range(10 + i, 42 + i)) for i in range(4)]
+        keys = [("pk-%d" % k, ed25519.public_key_from_seed(seeds[k])) for k in range(4)]
+        n = 40
+        ids = ["A-%05d" % i for i in range(n)]
+        recs = [{"name": "i%d" % i, "kind": "interception", "commitment": [B.h("c%d" % i)], "seed": seeds[i % 4]}
+                for i in range(n)] + [{"name": "seal", "kind": "sealed", "seed": seeds[0]}]
+        rows = [{"attackId": a, "containmentObserved": "egress_captured", "basis": "substrate", "method": "intercepted",
+                 "attribution": "paired", "actualLayer": "x", "refs": ["i%d" % i]} for i, a in enumerate(ids)]
+        st, _ = B.build(classes={"CO": ids}, expectedPayloads=None, assessedClasses=["CO"], records=recs, rows=rows,
+                        observedAttacks=[])
+        for i, rec in enumerate(st["predicate"]["observationRecords"]):
+            del rec["signatures"][0]["keyid"]
+            rec["signatures"] = [dict(fake(i * 16 + j), keyid="pk-0") for j in range(15)] + rec["signatures"]
+        notes = [x for x in Verifier(keys).verify_bytes(B.dumps(st)).notes if x.startswith(head)]
+        self.assertEqual(len(notes), 1, notes)
+        self.assertTrue(notes[0][len(head):].startswith(
+            "70 entries that verified nothing were counted, 70 of them on records another entry then verified (a "
+            "cosigner outside the policy, or entries added to a signed envelope) and 0 on records that verified nothing "
+            "(a signer outside the policy, or an input built to cost); observationRecords 5, 6, "), notes[0])
+        notes = [x for x in Verifier(KEYS3).verify_bytes(B.dumps(caught_rows(125, 16))).notes if x.startswith(head)]
+        self.assertEqual(len(notes), 1, notes)
+        self.assertTrue(notes[0][len(head):].startswith(
+            "96 entries that verified nothing were counted, 0 of them on records another entry then verified (a "
+            "cosigner outside the policy, or entries added to a signed envelope) and 96 on records that verified "
+            "nothing (a signer outside the policy, or an input built to cost); observationRecords 6, 7, "), notes[0])
 
     def test_one_entry_of_a_cosigner_outside_the_policy_never_costs_an_honest_statement(self):
         # every record carries the entry of the pinned signer and one entry no pinned key verifies (a cosigner outside

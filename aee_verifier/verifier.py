@@ -1134,7 +1134,9 @@ class Verifier:
         verified_cache: Dict[int, bool] = {}
         keys = self.keys or []
         pinned_ids = set(k[0] for k in keys)
-        state = {"failed": 0, "last_ok": None}
+        # counted_ok / counted_bad: signature entries whose failed attempts were counted, on records that another entry
+        # then verified / on records that verified nothing (named in the limit note: which case reached the limit)
+        state = {"failed": 0, "last_ok": None, "counted_ok": 0, "counted_bad": 0}
         over_cap: List[int] = []         # records carrying more verifiable signature entries than the limit: not tried
         untried: List[int] = []          # records left untried once the failed verifications reached their limit
 
@@ -1189,7 +1191,9 @@ class Verifier:
                 if ok:
                     break
                 spent.append(tried)
-            state["failed"] += sum(spent[1:] if ok else spent)
+            counted = spent[1:] if ok else spent
+            state["failed"] += sum(counted)
+            state["counted_ok" if ok else "counted_bad"] += len(counted)
             verified_cache[rec.index] = ok
             return ok
 
@@ -1232,7 +1236,10 @@ class Verifier:
                              % (listed([str(i) for i in over_cap]), self.max_signatures_per_record))
         if untried:
             rep.notes.append("signature verification stopped once the counted signature entries had %d or more failed attempts "
-                             "(limit, SPEC_NOTES N63): "
+                             "(limit, SPEC_NOTES N63): %d entries that verified nothing were counted, %d of them on records "
+                             "another entry then verified (a cosigner outside the policy, or entries added to a signed "
+                             "envelope) and %d on records that verified nothing (a signer outside the policy, or an input built to cost); "
                              "observationRecords %s not tried, so they verify nothing and a row citing them is not "
-                             "attested" % (self.max_failed_verifications, listed([str(i) for i in untried])))
+                             "attested" % (self.max_failed_verifications, state["counted_ok"] + state["counted_bad"],
+                                           state["counted_ok"], state["counted_bad"], listed([str(i) for i in untried])))
         return tiers

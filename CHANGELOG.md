@@ -1,0 +1,33 @@
+# Changelog
+
+0.1.0 is the code of `main` at cbb79e5 (no tag was made of it). The sections of SPEC_NOTES named below give every
+rule with the measure behind it.
+
+## 0.2.0 (unreleased): outputs change
+
+Verdicts, exit statuses and tiers change only in the cases listed here. The 225 tests of 0.1.0
+(`tests/test_verifier.py` 163, `test_units.py` 27, `test_review_fixes.py` 26, `test_interop_20261114.py` 9, as they
+were at cbb79e5) all pass on 0.2.0 (measured on CPython 3.11.2).
+
+Changes of verdict, exit status or tier:
+
+- an input longer than `AEE_MAX_INPUT_BYTES` (default 16 MiB) is unreadable input, exit 2 (N62); before, it was read
+  whole;
+- an input larger than the memory the process may use, at the read or later, is exit 2 with the JSON line (N61);
+  before, a traceback and exit 1, the reject status;
+- a limit variable that is not ASCII decimal digits of value at least 1 is exit 2, `usage` (N62);
+- a substrate row is `unattested`, with a note, where the spec alone would say `attested`, when a record it cites
+  carries more than `AEE_MAX_SIGNATURES_PER_RECORD` (default 16) signature entries or is left untried once the
+  counted failed verifications reach `AEE_MAX_FAILED_VERIFICATIONS` (default 256) (N63);
+- `Verifier(keys)` used as a library skips keys of small or mixed order, as the command line already did (N60): a
+  row whose records only such a key verified is now `unattested`.
+
+Changes of the human-readable lines and of the library only (the JSON line does not move):
+
+- line-breaking characters quoted from the statement are escaped (N61);
+- notes name the members nothing reads inside the predicate, signature entries that verify nothing, and the predicate
+  members L779-L781 reserves (N59);
+- the refinement `attested-sealed` (N64): `Report.refined_tiers` and one note;
+- the signatures of `moat-drop` and `uncommitted-observation` records are verified, as L1396 requires; one that does
+  not verify is named (`Report.non_covering_unverified`, N65);
+- repeated `observationRefs` indexes and many unread member names cost linear time, not quadratic (N23, N59).

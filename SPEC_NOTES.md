@@ -247,6 +247,13 @@ sign, spaces, other digits, 0) is a bad invocation: exit 2, code `usage`, the va
 number are read as their value: measured on d0b8d7a (CPython 3.9.25, 3.11.2, 3.13.15), a value of 5000 digits was a
 `usage` error that did not name the variable (the interpreter refuses to convert more than 4300 digits at once);
 since 2026-11-21 the value is built 4000 digits at a time.
+Limits in other verifiers, read in their code on 2026-11-21 (not run): cosign v3.1.4 refuses an attachment larger than
+128 MiB (`COSIGN_MAX_ATTACHMENT_SIZE`; a download limit, not the size of one statement) and more than 100 signatures or
+attestations per image; sigstore-go v1.4.0 accepts at most 32 transparency-log entries and 32 timestamps, and exactly one
+signature per DSSE envelope (as the Sigstore bundle format requires); in-toto-golang v0.11.0 with go-securesystemslib,
+securesystemslib v1.6.0 (Python) and go-witness v0.12.0 set no limit on the signatures or the attempts (only the
+threshold). The 16 MiB here is more than ten times the largest honest statement measured (1.6 MB) and keeps the
+measured peak near 760 MB.
 
 **N63. Signature limits of the tier derivation (2026-11-20).** L769–L771 make a substrate row `attested` when every
 covering record's signature verifies against a pinned key; DSSE (envelope.md "Multiple signatures", protocol.md
@@ -270,7 +277,17 @@ second form; the two earlier rules and their measures are below). Cost bound: th
 `max_failed_verifications` - 1 + `max_signatures_per_record` x the number of pinned keys; beside them a record that
 verifies costs at most 2 x the number of pinned keys attempts, and only a payload a pinned key signed can verify (a
 payload is carried once: `duplicate-record`). Each case is
-named in a note with the records it left untried. A limit can only take `attested` away (the row becomes `unattested`),
+named in a note with the records it left untried; since 0.2.0 the note of (b) also gives the counted entries and where
+they were: on records another entry then verified (a cosigner outside the policy, or entries added to a signed envelope)
+or on records that verified nothing (a signer outside the policy, or an input built to cost), so the reader can tell
+which case reached the limit (measured: 15 such entries before the good one on each of 40 records under four keys, 70
+counted, all on records that then verified; 16 on each of 125 records under three keys, 96 counted, none on records that
+verified). Against the limits of other verifiers (listed in N62, read in their code on 2026-11-21, not run): 16 entries
+per record is 16 times the one signature per envelope that sigstore-go requires and below cosign's 100 signatures per
+image; the limit of 256 counted failed verifications has no counterpart in any of them (in-toto-golang,
+securesystemslib and go-witness set no limit): it is our own value, set by the cost measured above (about 0.5 s).
+Sigstore requires exactly one signature per envelope and go-witness always writes the `keyid`, so the case of several cosigners outside the policy before the pinned signer with no or
+another `keyid` (measured below) does not arise from the producers read; when it does, the note says so. A limit can only take `attested` away (the row becomes `unattested`),
 never give it; the verdict, the codes and `result` do not move. **This departs from L769–L771** for a statement over a
 limit: there a row the spec would call `attested` is `unattested` (fail-closed, and named). Raising both limits above
 the statement's counts restores the spec's derivation exactly. Order of the attempts (cost only: any order gives the same
