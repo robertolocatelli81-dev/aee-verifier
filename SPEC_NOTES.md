@@ -260,24 +260,33 @@ costs 2000 verifications and no failed one (8.5 s for 1.58 MB). Envelopes seen: 
 examples (L362–L376), two in DSSE's multi-signature example. **Choice (a consumer resource policy, decided by Roberto
 Locatelli on 2026-11-20):** (a) a record carrying more than `max_signatures_per_record` signature entries whose `sig` is base64 of 64 bytes
 (default 16, 8 times the most seen; `AEE_MAX_SIGNATURES_PER_RECORD`; the other entries cost nothing and verify nothing,
-N59, so they do not count) is not tried: it verifies nothing; (b) once
-`max_failed_verifications` Ed25519 verifications of one statement have failed (default 256, about 0.5 s at 2 ms each;
-`AEE_MAX_FAILED_VERIFICATIONS`), nothing more is tried and every record not yet decided verifies nothing. Each case is
+N59, so they do not count) is not tried: it verifies nothing; (b) the failed Ed25519 verifications of the records that verify nothing are
+counted, and once they reach `max_failed_verifications` (default 256, about 0.5 s at 2 ms each;
+`AEE_MAX_FAILED_VERIFICATIONS`) no further record is tried and every record not yet decided verifies nothing. The limit
+is checked before a record is tried, never in the middle of one, and the failed attempts of a record that then
+verifies are not counted (since 2026-11-21; until then every failed attempt counted, see the measure below). Cost
+bound: the records that verify nothing cost at most `max_failed_verifications` - 1 + `max_signatures_per_record` x the
+number of pinned keys attempts; a record that verifies costs at most `max_signatures_per_record` x the number of pinned
+keys, and only a payload a pinned key signed can verify (a payload is carried once: `duplicate-record`). Each case is
 named in a note with the records it left untried. A limit can only take `attested` away (the row becomes `unattested`),
 never give it; the verdict, the codes and `result` do not move. **This departs from L769–L771** for a statement over a
 limit: there a row the spec would call `attested` is `unattested` (fail-closed, and named). Raising both limits above
 the statement's counts restores the spec's derivation exactly. Order of the attempts (cost only: any order gives the same
 answer below the limits): entries whose `keyid` names a pinned key first; for each entry the keys of that keyid first,
 then the key that verified the last record, then the policy order; an entry whose `sig` is not base64 of 64 bytes is
-not tried. After the change, on the same inputs: 1, 256, 256 verifications (0.09, 0.64,
+not tried. After the change of 2026-11-20, on the same inputs: 1, 256, 256 verifications (0.09, 0.64,
 1.13 s); the honest statement unchanged (2000, none failed; 2001 since N64, which verifies the seal once).
-What the failed-verification limit costs an honest statement (measured on d0b8d7a, three pinned keys, every record
-signed by a pinned key, default limits): records signed by one key, with the policy's `keyid`, another or none: no
-failed verification (200, 300, 600 records); records signed by two or three keys in turn carrying the policy's
-`keyid`: none; two keys in turn with no `keyid`, or with one the policy does not use: one failed verification per
-record after the first, so of 300 rows 256 are `attested` and 44 `unattested` (of 600: 256); three keys in turn: 192
-of 200. A consumer whose substrates sign under several keys gives the policy the `keyid`s the records carry, or
-raises `AEE_MAX_FAILED_VERIFICATIONS`.
+What the failed-verification limit cost an honest statement while every failed attempt counted (measured on d0b8d7a and
+on 9970cde, three pinned keys, every record signed by a pinned key, default limits): records signed by one key, with
+the policy's `keyid`, another or none: no failed verification (200, 300, 600 records); records signed by two or three
+keys in turn carrying the policy's `keyid`: none; two keys in turn with no `keyid`, or with one the policy does not
+use: one failed verification per record after the first, so of 300 rows 256 were `attested` and 44 `unattested` (of
+600: 256); three keys in turn: 192 of 200. Since 2026-11-21 (the rule above), measured on generated honest
+statements with 1 to 8 pinned keys signing in turn, `keyid` of the policy, absent or of another name, 1, 7 and 300
+records (72 statements), and 2000 records with 3 and 8 keys (6 statements): every row `attested`, no limit note
+(2000 records, 8 keys, no `keyid`: 9251 verifications, 7250 of them failed and not counted, 42 s). The hostile inputs
+above after the change: 1, 288 and 258 verifications (16 entries on each of 125 records: 6 records of 48 failed
+attempts; one entry on each of 2000 records: 86 records of 3).
 
 **N64. A refinement of `attested`: `attested-sealed` (2026-11-20).** L766–L771: a substrate row is `attested` when every
 covering record's signature verifies; the covering records are those the row resolves (N48). The `sealed` record a

@@ -62,12 +62,12 @@ Human-readable lines, then **one JSON object on the last line**:
   note or message quotes from the statement is written as `\xNN` / `\uNNNN` (SPEC_NOTES N61).
 * `tiers`: one of `declared` / `attested` / `unattested` per `attackResults` row, in order; `[]` on reject.
   Signature limits (SPEC_NOTES N63, consumer policy): a record with more than `AEE_MAX_SIGNATURES_PER_RECORD` entries
-  whose `sig` is base64 of 64 bytes (default 16) is not tried, and verification stops once `AEE_MAX_FAILED_VERIFICATIONS` verifications of the statement
-  have failed (default 256); a record left untried verifies nothing, so a row citing it is `unattested` where the spec
-  alone (L769–L771) would say `attested`, and a note names the records. A limit never makes a row `attested`.
-  Records signed by one pinned key, or carrying the `keyid` the policy gives their key, cost no failed verification;
-  records signed by two or more pinned keys in turn, with no `keyid` or one the policy does not use, cost one or more
-  each (measured: 300 such records under two keys, 256 rows `attested` and 44 `unattested` at the default; N63).
+  whose `sig` is base64 of 64 bytes (default 16) is not tried, and no further record is tried once the records that
+  verify nothing have `AEE_MAX_FAILED_VERIFICATIONS` failed verifications (default 256; the failed attempts of a record
+  that then verifies are not counted, so a statement whose every record a pinned key signed never reaches the limit,
+  whatever its `keyid`s and signer order); a record left untried verifies nothing, so a row citing it is `unattested`
+  where the spec alone (L769–L771) would say `attested`, and a note names the records. A limit never makes a row
+  `attested`.
   A refinement of `attested` (spec L775–L778, SPEC_NOTES N64) is derived beside the tiers and never enters the JSON
   line: `attested-sealed`, when a `sealed` record that satisfies its kind and binds to this run also verifies against a
   pinned key (a caught or reconstructed row does not cite the seal, so its `attested` does not depend on it); a note
@@ -176,7 +176,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 279 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 281 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -198,16 +198,20 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   entries the loader does not use are each named in a warning (3000 generated entries), and a member name repeated
   in the policy makes it unusable.
 * `tests/test_fix_20261120.py` (21 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report, and four defects of the first form of these fixes (68c6507: unread members collected in time quadratic in their number; a list of names cut at 160 characters without a word; memory exhausted after the read still a traceback and exit 1; the note on `networkPosture`): a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23); a member name holding a line break forged lines of the human-readable output (N61); an input larger than the memory the process may use ended in a traceback, exit 1 and no JSON line (N61); members nothing reads, inside the predicate's objects, and signature entries that verify nothing were not named (N59); the key policy of N60 was applied by the command line only, not by `Verifier(keys)` used as a library (N60).
-* `tests/test_decisions_20261120.py` (33 tests): the consumer policies decided on 2026-11-20, each test failing on
+* `tests/test_decisions_20261120.py` (35 tests): the consumer policies decided on 2026-11-20, each test failing on
   64227ea except four guards (an unhashable `keyid` is no crash; a name that only looks reserved stays an
   unrecognized member; the refinement leaves the JSON line and the exit status as they were; so do the signatures of
   the records that cover nothing): the input size limit (N62); the signature limits (N63),
   with a generative test (60 statements, random entries, key policies and limits: a limit never adds an attestation and
   never moves the verdict, the codes or `result`); the note naming the predicate members L779–L781 reserves (N59); the refinement `attested-sealed` (N64); the signatures of the records that cover nothing, verified as L1396
   requires (N65; failing on 74dd0ba too). Six of the tests were added by the review of 2026-11-21: two fail on d0b8d7a
-  (a limit variable of more than 4300 digits; `AEE_MAX_FAILED_VERIFICATIONS` read by the command line), four pin
+  (a limit variable of more than 4300 digits; `AEE_MAX_FAILED_VERIFICATIONS` read by the command line), three pin
   what no test read there (a record left untried named once; no attested row, no verification of the seal; a kind
-  that is not one of the two registered is not verified by N65; two pinned keys signing in turn without keyids).
+  that is not one of the two registered is not verified by N65); the fourth, on two pinned keys signing in turn
+  without keyids, is replaced by three tests of the counting rule of 2026-11-21 (an honest statement, 1 to 4 pinned keys
+  signing in turn with the policy's `keyid`, none or another, never reaches even a limit of 1; the failed attempts of
+  a record that verifies are not counted, those of one that does not are; a record left untried stays unverified for
+  every row that cites it).
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
   after the integer bound in `jcs.format_number`; `cli.py` and `ed25519.py` re-measured 2026-11-14 after N60; the 3 sites
   added to `verifier.py` on 2026-11-15 by the negative `aeeDropCount` rule measured on 2026-11-16, all killed):
@@ -215,10 +219,10 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   survivor is classified in `tests/MUTATION.md` (equivalent or
   verdict-equivalent: message text, short-circuit flags, key-ordering,
   constants whose change is masked by a later step).  These counts are those of cbb79e5; the fixes of
-  2026-11-20 and the decisions of the same day added lines (`tests/mutate.py` now finds 615 sites in `verifier.py` and
-  46 in `cli.py`, 968 in the six modules) and only the sites on the lines they changed were run, with the same operators:
+  2026-11-20 and the decisions of the same day added lines (`tests/mutate.py` now finds 618 sites in `verifier.py` and
+  46 in `cli.py`, 971 in the six modules) and only the sites on the lines they changed were run, with the same operators:
   for the fixes, `verifier.py` 27 sites, 25 killed, `cli.py` 5 sites, 4 killed; for the decisions (lines that differ
-  from 64227ea), `verifier.py` 45 sites, 44 killed, `cli.py` 15 sites, 12 killed; for N65, 3 sites, 3 killed; for the limit variables read block by block (2026-11-21), `cli.py` 7 sites, 7 killed; every survivor is equivalent
+  from 64227ea), `verifier.py` 45 sites, 44 killed, `cli.py` 15 sites, 12 killed; for N65, 3 sites, 3 killed; for the limit variables read block by block (2026-11-21), `cli.py` 7 sites, 7 killed; for the counting rule of N63 (2026-11-21), `verifier.py` 7 sites, 7 killed; every survivor is equivalent
   (`tests/MUTATION.md`, last two sections). The four survivors of cbb79e5 on the key ordering are gone with the
   rewritten loop.
 

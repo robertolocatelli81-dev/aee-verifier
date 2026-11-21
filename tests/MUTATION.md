@@ -17,10 +17,13 @@ were not run again. Survivor line numbers below L800 are unchanged, above it the
 gives the counts measured on cbb79e5; on this tree `tests/mutate.py` finds 574 sites in `verifier.py` and 30 in
 `cli.py` (911 in the six modules), and only the sites on the changed lines were run (last section: 27 and 5); the
 others were not run again. Then the decisions of the same day (`tests/test_decisions_20261120.py`, SPEC_NOTES N62-N64)
-changed `verifier.py` and `cli.py` again: on this tree `tests/mutate.py` finds 615 sites in `verifier.py` and 46 in
-`cli.py` (968 in the six modules), and the sites on the lines they changed were run (last section: 45 and 15; then
+changed `verifier.py` and `cli.py` again: on this tree `tests/mutate.py` finds 618 sites in `verifier.py` and 46 in
+`cli.py` (971 in the six modules), and the sites on the lines they changed were run (last section: 45 and 15; then
 SPEC_NOTES N65, the signatures of the records that cover nothing: 3 sites, 3 killed; then, on 2026-11-21, the limit
-variables read 4000 digits at a time in `cli.py`: 7 sites on the changed lines, 7 killed).
+variables read 4000 digits at a time in `cli.py`: 7 sites on the changed lines, 7 killed; then, the same day, the
+counting rule of N63 (the failed attempts of a record that verifies are not counted, the limit checked before a
+record): 7 sites on the changed lines of `verifier.py`, 6 killed by the suite of that change and the seventh, an
+untried record cached as verified, by a test then added: 7 killed).
 The survivor lines of `verifier.py` and `cli.py` below are renumbered to this tree
 (same code, moved lines; renumbered with a line-by-line match of the sources of 64227ea and of this tree). The four
 survivors of cbb79e5 at L1091 of 64227ea (key ordering by the `keyid` hint, equivalent then) are gone: that loop was rewritten by

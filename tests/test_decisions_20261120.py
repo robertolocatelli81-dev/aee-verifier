@@ -56,19 +56,26 @@ def caught_rows(n, fakes, good_last=False):
 
 
 class CountVerify:
-    """Counts ed25519.verify calls (and the failed ones) made through the verifier module."""
+    """Counts ed25519.verify calls (and the failed ones) made through the verifier module, per signed message."""
 
     def __enter__(self):
         self.calls = self.failed = 0
+        self.per_message = {}                     # PAE bytes -> [failed attempts, verified]
         self.orig = V.ed25519.verify
 
         def counted(*a):
             ok = self.orig(*a)
             self.calls += 1
             self.failed += not ok
+            entry = self.per_message.setdefault(bytes(a[1]), [0, False])
+            entry[0] += not ok
+            entry[1] = entry[1] or ok
             return ok
         V.ed25519.verify = counted
         return self
+
+    def failed_on_records_that_verify_nothing(self):
+        return sum(f for f, ok in self.per_message.values() if not ok)
 
     def __exit__(self, *exc):
         V.ed25519.verify = self.orig
@@ -200,9 +207,11 @@ class TestSignatureLimits(unittest.TestCase):
             rep = Verifier(KEYS3).verify_bytes(B.dumps(st))
             elapsed = time.perf_counter() - t
         self.assertEqual(rep.to_json_line()["tiers"], ["unattested"] * 125)
-        self.assertEqual((c.calls, c.failed), (256, 256))                   # 64227ea: 6000 and 6000
-        self.assertLess(elapsed, 8.0)                                      # 64227ea: 12.0 s; here about 0.9 s
-        self.assertTrue(any(n.startswith("signature verification stopped after 256 failed attempts") for n in rep.notes))
+        # each record verifies nothing at 16 x 3 = 48 failed attempts; the limit is checked before a record: 6 records
+        self.assertEqual((c.calls, c.failed), (288, 288))                   # 64227ea: 6000 and 6000
+        self.assertLess(elapsed, 8.0)                                      # 64227ea: 12.0 s; here about 1 s
+        self.assertTrue(any(n.startswith("signature verification stopped once records that verify nothing had 256 or "
+                                         "more failed attempts") for n in rep.notes))
 
     def test_a_good_record_left_untried_by_the_limit_is_not_attested_and_is_named(self):
         # records 0-2: one entry that verifies nothing, 3 keys = 9 failures; record 3: the same entry and the good one,
@@ -211,7 +220,7 @@ class TestSignatureLimits(unittest.TestCase):
         for limit, last_tier in ((10, "attested"), (9, "unattested")):
             rep = Verifier(KEYS3, max_failed_verifications=limit).verify_bytes(B.dumps(st))
             self.assertEqual(rep.to_json_line()["tiers"], ["unattested"] * 3 + [last_tier], limit)
-            stopped = [n for n in rep.notes if "stopped after %d failed attempts" % limit in n]
+            stopped = [n for n in rep.notes if "had %d or more failed attempts" % limit in n]
             self.assertEqual(len(stopped), int(last_tier == "unattested"), rep.notes)
 
     def test_key_order_costs_one_failure_per_key_for_an_honest_statement_without_keyids(self):
@@ -269,10 +278,11 @@ class TestSignatureLimits(unittest.TestCase):
             keys = rnd.choice(policies)
             free = Verifier(keys, max_signatures_per_record=NO_LIMIT, max_failed_verifications=NO_LIMIT).verify_bytes(data)
             with CountVerify() as c:
-                lim = rnd.randrange(1, 12)
-                limited = Verifier(keys, max_signatures_per_record=rnd.randrange(1, 9),
+                lim, per_record = rnd.randrange(1, 12), rnd.randrange(1, 9)
+                limited = Verifier(keys, max_signatures_per_record=per_record,
                                    max_failed_verifications=lim).verify_bytes(data)
-            self.assertLessEqual(c.failed, lim)
+            # the limit is checked before each record, which is then tried in full (N63)
+            self.assertLessEqual(c.failed_on_records_that_verify_nothing(), lim - 1 + per_record * len(keys))
             a, b = free.to_json_line(), limited.to_json_line()
             self.assertEqual((a["verdict"], a["codes"], a["result"]), (b["verdict"], b["codes"], b["result"]))
             for x, y in zip(a["tiers"], b["tiers"]):
@@ -311,45 +321,90 @@ class TestSignatureLimits(unittest.TestCase):
                 one = run_cli(path, dict(base, AEE_MAX_FAILED_VERIFICATIONS=value))
                 self.assertEqual(one.returncode, 0, one.stderr[-200:])
                 self.assertIn('"tiers":["unattested","unattested"]', last_line(one))
-                self.assertIn(b"stopped after 1 failed attempts (limit, SPEC_NOTES N63): observationRecords 1 not tried",
+                self.assertIn(b"had 1 or more failed attempts (limit, SPEC_NOTES N63): observationRecords 1 not tried",
                               one.stdout)
 
     def test_a_record_left_untried_is_named_once_and_asked_once(self):
-        # the arming record every row cites: an entry that verifies nothing, hinting the pinned keyid (tried first),
-        # then the good one; with the limit at 1 the record is left untried by row 0 and not asked again by rows 1, 2
+        # row 0 cites the seal first, whose only entry verifies nothing (1 failure: the limit); rows 1 and 2 cite the
+        # arming record first: left untried by row 1 and not asked again by row 2
         st, _ = B.scenario_pass()
-        rec = st["predicate"]["observationRecords"][0]
-        rec["signatures"] = [dict(fake(0), keyid=B.SUBSTRATE_KEYID)] + rec["signatures"]
+        st["predicate"]["attackResults"][0]["observationRefs"] = [1, 0]
+        st["predicate"]["observationRecords"][1]["signatures"] = [dict(fake(0), keyid=B.SUBSTRATE_KEYID)]
         with CountVerify() as c:
             rep = Verifier(KEYS, max_failed_verifications=1).verify_bytes(B.dumps(st))
         self.assertEqual(rep.to_json_line()["tiers"], ["unattested"] * 3)
         self.assertEqual((c.calls, c.failed), (1, 1))
-        stopped = [n for n in rep.notes if "stopped after 1 failed attempts" in n]
+        stopped = [n for n in rep.notes if "had 1 or more failed attempts" in n]
         self.assertEqual(len(stopped), 1, rep.notes)
         self.assertIn("observationRecords 0 not tried, so", stopped[0])
 
-    def test_two_pinned_keys_signing_in_turn_without_keyids_cost_one_failure_per_record(self):
-        # an honest statement: every record signed by a pinned key, no keyid, the two keys alternating.  The key that
-        # verified the last record is tried first and fails, so each record after the first costs one failure and
-        # the rows from the limit on are unattested (default limit: from record 256 on; measured with 300 records)
-        n = 12
-        ids = ["A-%05d" % i for i in range(n)]
-        recs = [{"name": "i%d" % i, "kind": "interception", "commitment": [B.h("c%d" % i)],
-                 "seed": (B.SUBSTRATE_SEED, B.OTHER_SEED)[i % 2]} for i in range(n)] + [{"name": "seal", "kind": "sealed"}]
+    def test_a_record_left_untried_stays_unverified_for_every_row_that_cites_it(self):
+        # rows 0-2 cite records 0-2; row 3 cites records 0 and 2.  Record 0 verifies; record 1 verifies nothing (1
+        # failure: the limit); record 2, good, is left untried by row 2 and asked again by row 3: it must not count as
+        # verified the second time
+        ids = ["A-%05d" % i for i in range(4)]
+        recs = [{"name": "i%d" % i, "kind": "interception", "commitment": [B.h("c%d" % i)]} for i in range(3)]
+        recs.append({"name": "seal", "kind": "sealed"})
         rows = [{"attackId": a, "containmentObserved": "egress_captured", "basis": "substrate", "method": "intercepted",
-                 "attribution": "paired", "actualLayer": "x", "refs": ["i%d" % i]} for i, a in enumerate(ids)]
+                 "attribution": "paired", "actualLayer": "x", "refs": refs}
+                for a, refs in zip(ids, (["i0"], ["i1"], ["i2"], ["i0", "i2"]))]
         st, _ = B.build(classes={"CO": ids}, expectedPayloads=None, assessedClasses=["CO"], records=recs, rows=rows,
                         observedAttacks=[])
-        for rec in st["predicate"]["observationRecords"][:n]:
-            del rec["signatures"][0]["keyid"]
+        st["predicate"]["observationRecords"][1]["signatures"] = [fake(0)]
         data = B.dumps(st)
-        free = Verifier(KEYS3, max_failed_verifications=NO_LIMIT).verify_bytes(data)
-        self.assertEqual(free.to_json_line()["tiers"], ["attested"] * n)
+        free = Verifier(KEYS).verify_bytes(data)
+        self.assertEqual(free.to_json_line()["tiers"], ["attested", "unattested", "attested", "attested"], free.codes)
+        rep = Verifier(KEYS, max_failed_verifications=1).verify_bytes(data)
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested", "unattested", "unattested", "unattested"])
+
+    def test_an_honest_statement_never_reaches_the_failed_verification_limit(self):
+        # every record signed by a pinned key; K keys signing in turn; keyid of the policy, absent, or another name (the
+        # form of the spec's examples).  On d0b8d7a every failed attempt counted: two keys in turn with no keyid lost
+        # attestations from the 257th row at the default (N63); here the limit is 1, so one counted failure would show
+        seeds = [bytes(range(10 + i, 42 + i)) for i in range(4)]
+        n = 12
+        ids = ["A-%05d" % i for i in range(n)]
+        rows = [{"attackId": a, "containmentObserved": "egress_captured", "basis": "substrate", "method": "intercepted",
+                 "attribution": "paired", "actualLayer": "x", "refs": ["i%d" % i]} for i, a in enumerate(ids)]
+        for k_count in (1, 2, 3, 4):
+            keys = [("pk-%d" % k, ed25519.public_key_from_seed(seeds[k])) for k in range(k_count)]
+            for mode in ("policy", "absent", "other"):
+                recs = [{"name": "i%d" % i, "kind": "interception", "commitment": [B.h("c%d" % i)],
+                         "seed": seeds[(i * 7 + 3) % k_count],
+                         "keyid": {"policy": "pk-%d" % ((i * 7 + 3) % k_count), "other": "<hex>", "absent": "x"}[mode]}
+                        for i in range(n)] + [{"name": "seal", "kind": "sealed", "seed": seeds[k_count - 1]}]
+                st, _ = B.build(classes={"CO": ids}, expectedPayloads=None, assessedClasses=["CO"], records=recs,
+                                rows=rows, observedAttacks=[])
+                if mode == "absent":
+                    for rec in st["predicate"]["observationRecords"]:
+                        del rec["signatures"][0]["keyid"]
+                with CountVerify() as c:
+                    rep = Verifier(keys, max_failed_verifications=1).verify_bytes(B.dumps(st))
+                case = (k_count, mode, c.failed)
+                self.assertEqual(rep.to_json_line()["tiers"], ["attested"] * n, case)
+                self.assertEqual(rep.refined_tiers, ["attested-sealed"] * n, case)
+                self.assertFalse(any("limit, SPEC_NOTES N63" in x for x in rep.notes), (case, rep.notes))
+                if k_count > 1 and mode != "policy":
+                    self.assertGreater(c.failed, 0, case)           # failures happened, and were not counted
+
+    def test_failures_of_a_record_that_verifies_are_not_counted_but_those_of_one_that_does_not_are(self):
+        # record 0: 3 entries that verify nothing hinting the pinned keyid, then the good one: 9 failures, not counted
+        # (it verifies); record 1: 4 entries that verify nothing: 12 failures, counted; record 2: good
+        st = caught_rows(3, 0)
+        r0, r1 = st["predicate"]["observationRecords"][0], st["predicate"]["observationRecords"][1]
+        r0["signatures"] = [dict(fake(j), keyid=B.SUBSTRATE_KEYID) for j in range(3)] + [dict(r0["signatures"][0], keyid="none")]
+        r1["signatures"] = [fake(9 + j) for j in range(4)]
         with CountVerify() as c:
-            rep = Verifier(KEYS3, max_failed_verifications=5).verify_bytes(data)
-        self.assertEqual(rep.to_json_line()["tiers"], ["attested"] * 5 + ["unattested"] * (n - 5))
-        self.assertEqual(c.failed, 5)
-        self.assertTrue(any("stopped after 5 failed attempts" in x for x in rep.notes), rep.notes)
+            rep = Verifier(KEYS3, max_failed_verifications=10).verify_bytes(B.dumps(st))
+        # limit 10: record 1 is tried in full (12 counted failures), record 2 is left untried
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested", "unattested", "unattested"])
+        self.assertEqual(c.failed, 9 + 12)
+        self.assertTrue(any(x.startswith("signature verification stopped once records that verify nothing had 10 or more")
+                            and "observationRecords 2, 3 not tried" in x for x in rep.notes), rep.notes)   # 3: the seal (N64)
+        with CountVerify() as c:
+            rep = Verifier(KEYS3, max_failed_verifications=13).verify_bytes(B.dumps(st))      # 12 < 13: record 2 tried
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested", "unattested", "attested"])
+        self.assertEqual(c.failed, 9 + 12)
 
     def test_limits_out_of_their_closed_list_are_refused_by_the_library(self):
         for name in ("max_signatures_per_record", "max_failed_verifications"):
@@ -407,6 +462,7 @@ class TestReservedPredicateMembersAreNamed(unittest.TestCase):
 
 
 ZERO_SIG = base64.b64encode(bytes(64)).decode()
+BAD_ENTRY = {"keyid": "k2", "sig": base64.b64encode(R_POINT + (5).to_bytes(32, "little")).decode()}
 
 
 class TestAttestedSealedRefinement(unittest.TestCase):
@@ -474,10 +530,10 @@ class TestAttestedSealedRefinement(unittest.TestCase):
         rep = Verifier(KEYS + [("k2", B.OTHER_PUB)], max_failed_verifications=1).verify_bytes(B.dumps(st))
         self.assertEqual(rep.to_json_line()["tiers"], ["attested"] * 3)
         self.assertEqual(rep.refined_tiers, ["attested-sealed"] * 3)                 # keyid hint: no failure at all
-        st["predicate"]["observationRecords"][info["index"]["seal"]]["signatures"][0]["keyid"] = "k2"   # wrong hint
+        st["predicate"]["observationRecords"][info["index"]["arm"]]["signatures"] = [BAD_ENTRY]
         rep = Verifier(KEYS + [("k2", B.OTHER_PUB)], max_failed_verifications=1).verify_bytes(B.dumps(st))
-        # rows 0, 1, 2 cite int1; arm, seal; exam: the seal's one failed attempt reaches the limit, so the seal and exam
-        # are left untried
+        # rows 0, 1, 2 cite int1; arm, seal; exam: the arming record verifies nothing (its failed attempts reach the
+        # limit), so exam and the seal are left untried
         self.assertEqual(rep.to_json_line()["tiers"], ["attested", "unattested", "unattested"])
         self.assertEqual(rep.refined_tiers, ["attested", "unattested", "unattested"])
 

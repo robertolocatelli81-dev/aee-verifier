@@ -1160,19 +1160,32 @@ class Verifier:
                 over_cap.append(rec.index)
                 sigs = []
             sigs.sort(key=lambda t: t[0])                       # stable: entries hinting a pinned keyid first
+            # The failed attempts of a record count against the limit only when the record verifies nothing, and the
+            # limit is checked before a record is tried, never in the middle of one: a statement whose every record a
+            # pinned key signed never reaches it, whatever its keyids, signer order or number of pinned keys (until
+            # 2026-11-21 every failed attempt counted: two or three keys signing in turn with no keyid, or one the
+            # policy does not use, cost one failure per record, and an honest statement lost attestations from its
+            # 193rd or 257th row).  Cost: the records that verify nothing are tried until their failed attempts reach
+            # the limit, the last one in full, so they cost at most max_failed_verifications - 1 +
+            # max_signatures_per_record x len(keys) attempts; a record that verifies costs at most
+            # max_signatures_per_record x len(keys), and only a payload a pinned key signed can verify (a payload is
+            # carried once: duplicate-record).
+            if sigs and state["failed"] >= self.max_failed_verifications:
+                untried.append(rec.index)
+                verified_cache[rec.index] = False
+                return False
+            here = 0
             for _, hint, raw in sigs:
                 for k in key_order(hint):
-                    if state["failed"] >= self.max_failed_verifications:
-                        untried.append(rec.index)
-                        verified_cache[rec.index] = False
-                        return False
                     if ed25519.verify(k[1], rec.pae, raw):
                         state["last_ok"] = k
                         ok = True
                         break
-                    state["failed"] += 1
+                    here += 1
                 if ok:
                     break
+            if not ok:
+                state["failed"] += here
             verified_cache[rec.index] = ok
             return ok
 
@@ -1214,7 +1227,8 @@ class Verifier:
                              "so they verify nothing and a row citing them is not attested"
                              % (listed([str(i) for i in over_cap]), self.max_signatures_per_record))
         if untried:
-            rep.notes.append("signature verification stopped after %d failed attempts (limit, SPEC_NOTES N63): "
+            rep.notes.append("signature verification stopped once records that verify nothing had %d or more failed attempts "
+                             "(limit, SPEC_NOTES N63): "
                              "observationRecords %s not tried, so they verify nothing and a row citing them is not "
                              "attested" % (self.max_failed_verifications, listed([str(i) for i in untried])))
         return tiers
