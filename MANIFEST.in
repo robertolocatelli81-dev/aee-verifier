@@ -1,0 +1,6 @@
+# the sdist carries what the tests, the documentation and the licences of copied files need
+include CHANGELOG.md SPEC_NOTES.md REQUIREMENTS.md aee-verify
+recursive-include spec *.md
+recursive-include tests *.py *.md
+recursive-include tests/interop *
+global-exclude __pycache__ *.pyc

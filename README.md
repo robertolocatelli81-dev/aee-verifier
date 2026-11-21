@@ -313,4 +313,7 @@ declared in our reply on finos/ai-governance-framework#337.
 
 Apache License 2.0 — see `LICENSE`.
 
-Copyright 2026 Roberto Locatelli.
+Copyright 2026 Roberto Locatelli, except the files written by others and kept unmodified, each under its own
+licence: `spec/` (the AEE specification text and three README sections of agent-evidence-vectors 0.12.1, by Sankalp
+Gilda, Apache-2.0; `spec/SOURCES.md`) and `tests/interop/` (Wycheproof and gowebpki/jcs test vectors, Apache-2.0;
+`tests/interop/SOURCES.md`).
