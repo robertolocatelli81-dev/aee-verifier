@@ -17,8 +17,8 @@ Changes of verdict, exit status or tier:
   before, a traceback and exit 1, the reject status;
 - a limit variable that is not ASCII decimal digits of value at least 1 is exit 2, `usage` (N62);
 - a substrate row is `unattested`, with a note, where the spec alone would say `attested`, when a record it cites
-  carries more than `AEE_MAX_SIGNATURES_PER_RECORD` (default 16) signature entries or is left untried once the
-  counted failed verifications reach `AEE_MAX_FAILED_VERIFICATIONS` (default 256) (N63);
+  carries more than `AEE_MAX_SIGNATURES_PER_RECORD` (default 16) signature entries whose `sig` is base64 of 64 bytes,
+  or is left untried once the counted failed verifications reach `AEE_MAX_FAILED_VERIFICATIONS` (default 256) (N63);
 - `Verifier(keys)` used as a library skips keys of small or mixed order, as the command line already did (N60): a
   row whose records only such a key verified is now `unattested`.
 
@@ -30,4 +30,4 @@ Changes of the human-readable lines and of the library only (the JSON line does 
 - the refinement `attested-sealed` (N64): `Report.refined_tiers` and one note;
 - the signatures of `moat-drop` and `uncommitted-observation` records are verified, as L1396 requires; one that does
   not verify is named (`Report.non_covering_unverified`, N65);
-- repeated `observationRefs` indexes and many unread member names cost linear time, not quadratic (N23, N59).
+- repeated `observationRefs` indexes cost linear time, not quadratic (N23).

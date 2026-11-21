@@ -250,9 +250,9 @@ since 2026-11-21 the value is built 4000 digits at a time.
 Limits in other verifiers, read in their code on 2026-11-21 (not run): cosign v3.1.4 refuses an attachment larger than
 128 MiB (`COSIGN_MAX_ATTACHMENT_SIZE`; a download limit, not the size of one statement) and more than 100 signatures or
 attestations per image; sigstore-go v1.4.0 accepts at most 32 transparency-log entries and 32 timestamps, and exactly one
-signature per DSSE envelope (as the Sigstore bundle format requires); in-toto-golang v0.11.0 with go-securesystemslib,
-securesystemslib v1.6.0 (Python) and go-witness v0.12.0 set no limit on the signatures or the attempts (only the
-threshold). The 16 MiB here is more than ten times the largest honest statement measured (1.6 MB) and keeps the
+signature per DSSE envelope (as the Sigstore bundle format requires); in-toto-golang v0.11.0 with go-securesystemslib
+v0.10.0 (the version it pins; v0.11.1 reads the same), securesystemslib v1.6.0 (Python) and go-witness v0.12.0 set no
+limit on the signatures or the attempts (only the threshold). The 16 MiB here is more than ten times the largest honest statement measured (1.6 MB) and keeps the
 measured peak near 760 MB.
 
 **N63. Signature limits of the tier derivation (2026-11-20).** L769–L771 make a substrate row `attested` when every
@@ -286,8 +286,12 @@ verified). Against the limits of other verifiers (listed in N62, read in their c
 per record is 16 times the one signature per envelope that sigstore-go requires and below cosign's 100 signatures per
 image; the limit of 256 counted failed verifications has no counterpart in any of them (in-toto-golang,
 securesystemslib and go-witness set no limit): it is our own value, set by the cost measured above (about 0.5 s).
-Sigstore requires exactly one signature per envelope and go-witness always writes the `keyid`, so the case of several cosigners outside the policy before the pinned signer with no or
-another `keyid` (measured below) does not arise from the producers read; when it does, the note says so. A limit can only take `attested` away (the row becomes `unattested`),
+Sigstore requires exactly one signature per envelope and go-witness always writes the `keyid` of the signing key, so
+the case of several cosigners outside the policy before the pinned signer with no or another `keyid` (measured below)
+does not arise from the producers read when the policy names its keys by the `keyid`s the producer writes. With other
+names in the policy it does (measured on 2026-11-21: 300 records, each with two such cosigners before the pinned
+signer, every entry carrying a `keyid` of its own: 86 rows `attested` with three pinned keys and 32 with eight, 300
+when the policy uses the producer's `keyid`s), and the note says so. A limit can only take `attested` away (the row becomes `unattested`),
 never give it; the verdict, the codes and `result` do not move. **This departs from L769–L771** for a statement over a
 limit: there a row the spec would call `attested` is `unattested` (fail-closed, and named). Raising both limits above
 the statement's counts restores the spec's derivation exactly. Order of the attempts (cost only: any order gives the same

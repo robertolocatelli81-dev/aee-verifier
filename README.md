@@ -73,8 +73,8 @@ Human-readable lines, then **one JSON object on the last line**:
   many counted entries were on records another entry then verified and how many on records that verified nothing. A
   limit never makes a row `attested`. For comparison (their code, read on 2026-11-21): cosign v3.1.4 refuses
   attachments over 128 MiB and more than 100 signatures per image; sigstore-go v1.4.0 takes exactly one signature per
-  DSSE envelope, 32 log entries, 32 timestamps; in-toto-golang, securesystemslib and go-witness set no limit. The 256
-  counted failures have no counterpart there: it is our own value (N63).
+  DSSE envelope and at most 32 log entries and 32 timestamps; in-toto-golang, securesystemslib and go-witness set no
+  limit. The 256 counted failures have no counterpart there: it is our own value (N63).
   A refinement of `attested` (spec L775–L778, SPEC_NOTES N64) is derived beside the tiers and never enters the JSON
   line: `attested-sealed`, when a `sealed` record that satisfies its kind and binds to this run also verifies against a
   pinned key (a caught or reconstructed row does not cite the seal, so its `attested` does not depend on it); a note
