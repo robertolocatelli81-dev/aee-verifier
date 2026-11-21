@@ -46,9 +46,17 @@ def limit_from_env(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if raw is None:
         return default
-    if not (raw.isascii() and raw.isdigit()) or int(raw) < 1:
+    if not (raw.isascii() and raw.isdigit()):
         raise ValueError("%s=%r is not a positive decimal integer" % (name, raw))
-    return int(raw)
+    # the value is built 4000 digits at a time: int() refuses a string of more than 4300 digits (CPython's limit on
+    # str -> int), and until 2026-11-21 such a value, digits only and at least 1, was a usage error that did not name
+    # the variable (measured on d0b8d7a with 5000 digits, CPython 3.9.25, 3.11.2, 3.13.15)
+    value = 0
+    for i in range(0, len(raw), 4000):
+        value = value * 10 ** len(raw[i:i + 4000]) + int(raw[i:i + 4000])
+    if value < 1:
+        raise ValueError("%s=%r is not a positive decimal integer" % (name, raw))
+    return value
 
 
 def read_limited(path: str, limit: int) -> bytes:

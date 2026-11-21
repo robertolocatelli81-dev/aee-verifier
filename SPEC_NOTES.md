@@ -243,7 +243,10 @@ the command line reads the input in chunks of 1 MiB and stops as soon as more th
 (`/dev/zero` with no process limit: exit 2 after 0.22 s at 31 MB resident).
 `Verifier(keys, max_input_bytes=…)` (same default) raises `InputTooLarge` on a longer input, so the library gives no
 verdict either. The variable, when set, must be ASCII decimal digits of value at least 1; any other value (empty, a
-sign, spaces, other digits, 0) is a bad invocation: exit 2, code `usage`, the variable named on stderr.
+sign, spaces, other digits, 0) is a bad invocation: exit 2, code `usage`, the variable named on stderr. Digits of any
+number are read as their value: measured on d0b8d7a (CPython 3.9.25, 3.11.2, 3.13.15), a value of 5000 digits was a
+`usage` error that did not name the variable (the interpreter refuses to convert more than 4300 digits at once);
+since 2026-11-21 the value is built 4000 digits at a time.
 
 **N63. Signature limits of the tier derivation (2026-11-20).** L769–L771 make a substrate row `attested` when every
 covering record's signature verifies against a pinned key; DSSE (envelope.md "Multiple signatures", protocol.md
@@ -267,7 +270,14 @@ the statement's counts restores the spec's derivation exactly. Order of the atte
 answer below the limits): entries whose `keyid` names a pinned key first; for each entry the keys of that keyid first,
 then the key that verified the last record, then the policy order; an entry whose `sig` is not base64 of 64 bytes is
 not tried. After the change, on the same inputs: 1, 256, 256 verifications (0.09, 0.64,
-1.13 s); the honest statement unchanged (2000, none failed).
+1.13 s); the honest statement unchanged (2000, none failed; 2001 since N64, which verifies the seal once).
+What the failed-verification limit costs an honest statement (measured on d0b8d7a, three pinned keys, every record
+signed by a pinned key, default limits): records signed by one key, with the policy's `keyid`, another or none: no
+failed verification (200, 300, 600 records); records signed by two or three keys in turn carrying the policy's
+`keyid`: none; two keys in turn with no `keyid`, or with one the policy does not use: one failed verification per
+record after the first, so of 300 rows 256 are `attested` and 44 `unattested` (of 600: 256); three keys in turn: 192
+of 200. A consumer whose substrates sign under several keys gives the policy the `keyid`s the records carry, or
+raises `AEE_MAX_FAILED_VERIFICATIONS`.
 
 **N64. A refinement of `attested`: `attested-sealed` (2026-11-20).** L766–L771: a substrate row is `attested` when every
 covering record's signature verifies; the covering records are those the row resolves (N48). The `sealed` record a

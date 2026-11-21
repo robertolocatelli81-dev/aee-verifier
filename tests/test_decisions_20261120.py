@@ -148,6 +148,24 @@ class TestInputSizeLimit(unittest.TestCase):
             with self.assertRaises(ValueError, msg=repr(bad)):
                 Verifier(KEYS, max_input_bytes=bad)
 
+    def test_a_limit_of_more_than_4300_digits_is_read_as_its_value(self):
+        # d0b8d7a: int() refused the string (CPython's 4300-digit limit) and the usage error did not name the variable
+        data = B.dumps(B.scenario_pass()[0])
+        zeros = "0" * 5000
+        with TempFile(data) as path:
+            # 3999 zeros put the first digit of the value in one 4000-digit block and the rest in the next
+            for pad in (zeros, "0" * 3999):
+                over = run_cli(path, {"AEE_MAX_INPUT_BYTES": pad + str(len(data) - 1)})
+                self.assertEqual((over.returncode, last_line(over)), (2, UNREADABLE), (len(pad), over.stderr[-200:]))
+                at = run_cli(path, {"AEE_MAX_INPUT_BYTES": pad + str(len(data))})
+                self.assertEqual(at.returncode, 0, (len(pad), at.stderr[-200:]))
+            for value in (zeros + str(len(data)), "9" * 5000, "1" + zeros):
+                ok = run_cli(path, {"AEE_MAX_INPUT_BYTES": value})
+                self.assertEqual(ok.returncode, 0, (value[:8], len(value), ok.stderr[-200:]))
+            none = run_cli(path, {"AEE_MAX_INPUT_BYTES": zeros})                     # 5000 digits, value 0
+            self.assertEqual((none.returncode, last_line(none)), (2, USAGE))
+            self.assertIn(b"AEE_MAX_INPUT_BYTES", none.stderr)
+
 
 class TestSignatureLimits(unittest.TestCase):
     """D1 (N63): every signature entry was tried against every pinned key (64227ea, three keys: 2000 entries that verify
@@ -282,6 +300,57 @@ class TestSignatureLimits(unittest.TestCase):
                     self.assertEqual((proc.returncode, last_line(proc)), (2, USAGE), (name, value))
                     self.assertIn(name.encode(), proc.stderr)
 
+    def test_the_command_line_passes_the_failed_verification_limit(self):
+        # record 0: one entry that verifies nothing (1 failure under the one pinned key); record 1: the same entry and
+        # the good one, tried first.  With the limit at 1 record 1 is left untried
+        st = caught_rows(2, 1, good_last=True)
+        with TempFile(B.dumps(st)) as path, tempfile.TemporaryDirectory() as d:
+            base = {"AEE_SUBSTRATE_KEYS": B.key_policy_file(os.path.join(d, "keys.json"))}
+            self.assertIn('"tiers":["unattested","attested"]', last_line(run_cli(path, base)))
+            for value in ("1", "0" * 5000 + "1"):                              # the second: more than 4300 digits
+                one = run_cli(path, dict(base, AEE_MAX_FAILED_VERIFICATIONS=value))
+                self.assertEqual(one.returncode, 0, one.stderr[-200:])
+                self.assertIn('"tiers":["unattested","unattested"]', last_line(one))
+                self.assertIn(b"stopped after 1 failed attempts (limit, SPEC_NOTES N63): observationRecords 1 not tried",
+                              one.stdout)
+
+    def test_a_record_left_untried_is_named_once_and_asked_once(self):
+        # the arming record every row cites: an entry that verifies nothing, hinting the pinned keyid (tried first),
+        # then the good one; with the limit at 1 the record is left untried by row 0 and not asked again by rows 1, 2
+        st, _ = B.scenario_pass()
+        rec = st["predicate"]["observationRecords"][0]
+        rec["signatures"] = [dict(fake(0), keyid=B.SUBSTRATE_KEYID)] + rec["signatures"]
+        with CountVerify() as c:
+            rep = Verifier(KEYS, max_failed_verifications=1).verify_bytes(B.dumps(st))
+        self.assertEqual(rep.to_json_line()["tiers"], ["unattested"] * 3)
+        self.assertEqual((c.calls, c.failed), (1, 1))
+        stopped = [n for n in rep.notes if "stopped after 1 failed attempts" in n]
+        self.assertEqual(len(stopped), 1, rep.notes)
+        self.assertIn("observationRecords 0 not tried, so", stopped[0])
+
+    def test_two_pinned_keys_signing_in_turn_without_keyids_cost_one_failure_per_record(self):
+        # an honest statement: every record signed by a pinned key, no keyid, the two keys alternating.  The key that
+        # verified the last record is tried first and fails, so each record after the first costs one failure and
+        # the rows from the limit on are unattested (default limit: from record 256 on; measured with 300 records)
+        n = 12
+        ids = ["A-%05d" % i for i in range(n)]
+        recs = [{"name": "i%d" % i, "kind": "interception", "commitment": [B.h("c%d" % i)],
+                 "seed": (B.SUBSTRATE_SEED, B.OTHER_SEED)[i % 2]} for i in range(n)] + [{"name": "seal", "kind": "sealed"}]
+        rows = [{"attackId": a, "containmentObserved": "egress_captured", "basis": "substrate", "method": "intercepted",
+                 "attribution": "paired", "actualLayer": "x", "refs": ["i%d" % i]} for i, a in enumerate(ids)]
+        st, _ = B.build(classes={"CO": ids}, expectedPayloads=None, assessedClasses=["CO"], records=recs, rows=rows,
+                        observedAttacks=[])
+        for rec in st["predicate"]["observationRecords"][:n]:
+            del rec["signatures"][0]["keyid"]
+        data = B.dumps(st)
+        free = Verifier(KEYS3, max_failed_verifications=NO_LIMIT).verify_bytes(data)
+        self.assertEqual(free.to_json_line()["tiers"], ["attested"] * n)
+        with CountVerify() as c:
+            rep = Verifier(KEYS3, max_failed_verifications=5).verify_bytes(data)
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested"] * 5 + ["unattested"] * (n - 5))
+        self.assertEqual(c.failed, 5)
+        self.assertTrue(any("stopped after 5 failed attempts" in x for x in rep.notes), rep.notes)
+
     def test_limits_out_of_their_closed_list_are_refused_by_the_library(self):
         for name in ("max_signatures_per_record", "max_failed_verifications"):
             for bad in (0, -1, True, 2.0, "3", None):
@@ -412,6 +481,15 @@ class TestAttestedSealedRefinement(unittest.TestCase):
         self.assertEqual(rep.to_json_line()["tiers"], ["attested", "unattested", "unattested"])
         self.assertEqual(rep.refined_tiers, ["attested", "unattested", "unattested"])
 
+    def test_with_no_attested_row_the_seal_is_not_verified(self):
+        # two caught rows whose records carry one entry that verifies nothing: no row is attested, so there is nothing
+        # to refine and the seal (signed well) costs no verification: 2 entries x 3 keys
+        with CountVerify() as c:
+            rep = Verifier(KEYS3).verify_bytes(B.dumps(caught_rows(2, 1)))
+        self.assertEqual(rep.refined_tiers, ["unattested"] * 2)
+        self.assertEqual((c.calls, c.failed), (6, 6))
+        self.assertFalse(any("refinement" in n for n in rep.notes), rep.notes)
+
     def test_guard_the_json_line_and_the_exit_status_do_not_move(self):
         with TempFile(B.dumps(self._seal_zeroed())) as path, tempfile.TemporaryDirectory() as d:
             proc = run_cli(path, {"AEE_SUBSTRATE_KEYS": B.key_policy_file(os.path.join(d, "k.json"))})
@@ -458,6 +536,16 @@ class TestNonCoveringRecordSignatures(unittest.TestCase):
         with CountVerify() as c:
             rep = Verifier(None).verify_bytes(data)
         self.assertEqual((c.calls, rep.non_covering_unverified), (0, []))
+
+    def test_only_the_two_registered_kinds_are_verified_here(self):
+        # a record of a kind this verifier does not know, cited by no row, its signature zeroed: L1396 speaks of the two
+        # registered kinds only, so it is not verified (4 calls: int1, arm, seal, exam) and not listed
+        recs = B.DEFAULT["records"] + [{"name": "u", "kind": "producer-kind", "badSig": True}]
+        with CountVerify() as c:
+            rep = Verifier(KEYS).verify_bytes(B.dumps(B.build(records=recs)[0]))
+        self.assertEqual(rep.non_covering_unverified, [])
+        self.assertEqual((rep.to_json_line()["tiers"], c.calls), (["attested"] * 3, 4))
+        self.assertFalse(any("N65" in n for n in rep.notes), rep.notes)
 
     def test_verified_after_the_tiers_so_the_limits_never_take_a_tier(self):
         data, idx = self._build("uncommitted-observation", "zeroed", True)
