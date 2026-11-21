@@ -1,0 +1,45 @@
+name: Build and test the release distributions
+
+# On a GitHub Release: build sdist + wheel, check metadata, run the tests against the installed wheel. Distribution is the GitHub
+# Release itself (and the author's PEP 503 index). The upload to PyPI is pypi.yml: it takes the released wheel and
+# sdist as they are (checked against SHA256SUMS), after the author approves the pypi environment.
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.x"
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install build
+          python -m build
+      - name: Verify metadata
+        run: |
+          python -m pip install twine
+          python -m twine check dist/*
+      - name: Run the tests against the installed wheel before publishing
+        run: |
+          set -e
+          python -m pip install dist/*.whl
+          # a copy of the tests with no aee_verifier beside them, so the installed package is the one imported
+          mkdir ../installed
+          cp -r tests aee-verify README.md CHANGELOG.md pyproject.toml ../installed/
+          cd ../installed
+          python -c "import aee_verifier, os, sys; p = aee_verifier.__file__; print(p); sys.exit('site-packages' not in p)"
+          python -m unittest discover -s tests -p "test_*.py"
+          aee-verify --help || [ $? -eq 2 ]
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/

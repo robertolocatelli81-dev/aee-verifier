@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aee-verifier"
+version = "0.2.0"
+description = "Verifier for the in-toto predicate Adversarial Execution Evidence (v0.7), standard library only"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Roberto Locatelli" }]
+keywords = ["in-toto", "attestation", "dsse", "ed25519", "verifier", "adversarial-execution-evidence"]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/robertolocatelli81-dev/aee-verifier"
+Changelog = "https://github.com/robertolocatelli81-dev/aee-verifier/blob/main/CHANGELOG.md"
+
+[tool.setuptools]
+packages = ["aee_verifier"]
+
+[project.scripts]
+aee-verify = "aee_verifier.cli:main"

@@ -3,7 +3,7 @@
 0.1.0 is the code of `main` at cbb79e5 (no tag was made of it). The sections of SPEC_NOTES named below give every
 rule with the measure behind it.
 
-## 0.2.0 (unreleased): outputs change
+## 0.2.0 — released on 2026-11-21: outputs change
 
 Verdicts, exit statuses and tiers change only in the cases listed here. The 225 tests of 0.1.0
 (`tests/test_verifier.py` 163, `test_units.py` 27, `test_review_fixes.py` 26, `test_interop_20261114.py` 9, as they
@@ -21,6 +21,11 @@ Changes of verdict, exit status or tier:
   or is left untried once the counted failed verifications reach `AEE_MAX_FAILED_VERIFICATIONS` (default 256) (N63);
 - `Verifier(keys)` used as a library skips keys of small or mixed order, as the command line already did (N60): a
   row whose records only such a key verified is now `unattested`.
+
+Packaging (new in 0.2.0): `pyproject.toml` (distribution `aee-verifier`, Python 3.9 or later, no dependency), the
+console script `aee-verify`, so `python3 -m aee_verifier` works from any directory once installed; the workflows
+`release-build.yml` (builds the wheel and sdist of a GitHub Release and runs the tests against the installed wheel) and
+`pypi.yml` (uploads those files, checked against the release's `SHA256SUMS`, by PyPI Trusted Publishing).
 
 Changes of the human-readable lines and of the library only (the JSON line does not move):
 
