@@ -23,7 +23,9 @@ SPEC_NOTES N65, the signatures of the records that cover nothing: 3 sites, 3 kil
 variables read 4000 digits at a time in `cli.py`: 7 sites on the changed lines, 7 killed; then, the same day, the
 counting rule of N63 (the failed attempts of a record that verifies are not counted, the limit checked before a
 record): 7 sites on the changed lines of `verifier.py`, 6 killed by the suite of that change and the seventh, an
-untried record cached as verified, by a test then added: 7 killed).
+untried record cached as verified, by a test then added: 7 killed; then, the same day, the second form of that rule
+(the entries that verify nothing are counted also on a record that verifies, but for one): 3 sites on the changed lines
+of `verifier.py`, 3 killed).
 The survivor lines of `verifier.py` and `cli.py` below are renumbered to this tree
 (same code, moved lines; renumbered with a line-by-line match of the sources of 64227ea and of this tree). The four
 survivors of cbb79e5 at L1091 of 64227ea (key ordering by the `keyid` hint, equivalent then) are gone: that loop was rewritten by

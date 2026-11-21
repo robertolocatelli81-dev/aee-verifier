@@ -56,26 +56,35 @@ def caught_rows(n, fakes, good_last=False):
 
 
 class CountVerify:
-    """Counts ed25519.verify calls (and the failed ones) made through the verifier module, per signed message."""
+    """Counts ed25519.verify calls (and the failed ones) made through the verifier module, per signed message and
+    per signature entry."""
 
     def __enter__(self):
         self.calls = self.failed = 0
         self.per_message = {}                     # PAE bytes -> [failed attempts, verified]
+        self.per_entry = {}                       # (PAE bytes, signature bytes) -> [failed attempts, verified]
         self.orig = V.ed25519.verify
 
         def counted(*a):
             ok = self.orig(*a)
             self.calls += 1
             self.failed += not ok
-            entry = self.per_message.setdefault(bytes(a[1]), [0, False])
-            entry[0] += not ok
-            entry[1] = entry[1] or ok
+            for table, key in ((self.per_message, bytes(a[1])), (self.per_entry, (bytes(a[1]), bytes(a[2])))):
+                entry = table.setdefault(key, [0, False])
+                entry[0] += not ok
+                entry[1] = entry[1] or ok
             return ok
         V.ed25519.verify = counted
         return self
 
     def failed_on_records_that_verify_nothing(self):
         return sum(f for f, ok in self.per_message.values() if not ok)
+
+    def failed_on_entries_that_verify_nothing(self):
+        return sum(f for f, ok in self.per_entry.values() if not ok)
+
+    def records_that_verify(self):
+        return sum(ok for _, ok in self.per_message.values())
 
     def __exit__(self, *exc):
         V.ed25519.verify = self.orig
@@ -210,7 +219,7 @@ class TestSignatureLimits(unittest.TestCase):
         # each record verifies nothing at 16 x 3 = 48 failed attempts; the limit is checked before a record: 6 records
         self.assertEqual((c.calls, c.failed), (288, 288))                   # 64227ea: 6000 and 6000
         self.assertLess(elapsed, 8.0)                                      # 64227ea: 12.0 s; here about 1 s
-        self.assertTrue(any(n.startswith("signature verification stopped once records that verify nothing had 256 or "
+        self.assertTrue(any(n.startswith("signature verification stopped once the counted signature entries had 256 or "
                                          "more failed attempts") for n in rep.notes))
 
     def test_a_good_record_left_untried_by_the_limit_is_not_attested_and_is_named(self):
@@ -283,6 +292,12 @@ class TestSignatureLimits(unittest.TestCase):
                                    max_failed_verifications=lim).verify_bytes(data)
             # the limit is checked before each record, which is then tried in full (N63)
             self.assertLessEqual(c.failed_on_records_that_verify_nothing(), lim - 1 + per_record * len(keys))
+            # entries that verify nothing: counted, but for one on each record that verifies (at most one attempt per
+            # key); beside them at most one attempt per key for the entry that verifies
+            verifying = c.records_that_verify()
+            self.assertLessEqual(c.failed_on_entries_that_verify_nothing(),
+                                 lim - 1 + per_record * len(keys) + len(keys) * verifying)
+            self.assertLessEqual(c.calls, lim - 1 + per_record * len(keys) + 2 * len(keys) * verifying)
             a, b = free.to_json_line(), limited.to_json_line()
             self.assertEqual((a["verdict"], a["codes"], a["result"]), (b["verdict"], b["codes"], b["result"]))
             for x, y in zip(a["tiers"], b["tiers"]):
@@ -387,24 +402,95 @@ class TestSignatureLimits(unittest.TestCase):
                 if k_count > 1 and mode != "policy":
                     self.assertGreater(c.failed, 0, case)           # failures happened, and were not counted
 
-    def test_failures_of_a_record_that_verifies_are_not_counted_but_those_of_one_that_does_not_are(self):
-        # record 0: 3 entries that verify nothing hinting the pinned keyid, then the good one: 9 failures, not counted
-        # (it verifies); record 1: 4 entries that verify nothing: 12 failures, counted; record 2: good
+    def test_entries_that_verify_nothing_are_counted_also_on_a_record_that_verifies_but_for_one(self):
+        # record 0: 3 entries that verify nothing hinting the pinned keyid, then the good one: 9 failures, of which the
+        # 3 of the first entry are not counted and 6 are, although the record verifies (cc84be9 counted none); record 1:
+        # good; record 2: 4 entries that verify nothing, 12 failures, all counted
         st = caught_rows(3, 0)
-        r0, r1 = st["predicate"]["observationRecords"][0], st["predicate"]["observationRecords"][1]
+        r0, r2 = st["predicate"]["observationRecords"][0], st["predicate"]["observationRecords"][2]
         r0["signatures"] = [dict(fake(j), keyid=B.SUBSTRATE_KEYID) for j in range(3)] + [dict(r0["signatures"][0], keyid="none")]
-        r1["signatures"] = [fake(9 + j) for j in range(4)]
+        r2["signatures"] = [fake(9 + j) for j in range(4)]
         with CountVerify() as c:
-            rep = Verifier(KEYS3, max_failed_verifications=10).verify_bytes(B.dumps(st))
-        # limit 10: record 1 is tried in full (12 counted failures), record 2 is left untried
+            rep = Verifier(KEYS3, max_failed_verifications=6).verify_bytes(B.dumps(st))
+        # limit 6: record 0 is tried in full and verifies; records 1, 2 and the seal (N64) are left untried
         self.assertEqual(rep.to_json_line()["tiers"], ["attested", "unattested", "unattested"])
-        self.assertEqual(c.failed, 9 + 12)
-        self.assertTrue(any(x.startswith("signature verification stopped once records that verify nothing had 10 or more")
-                            and "observationRecords 2, 3 not tried" in x for x in rep.notes), rep.notes)   # 3: the seal (N64)
+        self.assertEqual((c.calls, c.failed), (10, 9))
+        self.assertTrue(any(x.startswith("signature verification stopped once the counted signature entries had 6 or more "
+                                         "failed attempts") and "observationRecords 1, 2, 3 not tried" in x
+                            for x in rep.notes), rep.notes)
         with CountVerify() as c:
-            rep = Verifier(KEYS3, max_failed_verifications=13).verify_bytes(B.dumps(st))      # 12 < 13: record 2 tried
-        self.assertEqual(rep.to_json_line()["tiers"], ["attested", "unattested", "attested"])
-        self.assertEqual(c.failed, 9 + 12)
+            rep = Verifier(KEYS3, max_failed_verifications=7).verify_bytes(B.dumps(st))       # 6 < 7: records 1, 2 tried
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested", "attested", "unattested"])
+        # 9 + 1 on record 0, 1 on record 1, 12 on record 2; the seal is left untried (18 >= 7)
+        self.assertEqual((c.calls, c.failed), (23, 21))
+        self.assertTrue(any("had 7 or more failed attempts" in x and "observationRecords 3 not tried" in x
+                            for x in rep.notes), rep.notes)
+
+    def test_a_copied_statement_padded_with_entries_that_verify_nothing_is_stopped(self):
+        # 40 records, each signed once by one of four pinned keys in turn, no keyid: an honest statement.  Copied, with
+        # 15 entries that verify nothing and hint a pinned keyid put before each good entry (16 entries: the entry
+        # limit).  cc84be9 counted no failure on a record that verifies: 40 x 15 x 4 = 2400 failed attempts on those
+        # entries, every row attested, no note.  Here each record costs 14 x 4 = 56 counted failures: records 0-4 are
+        # tried (0, 56, ... 224 < 256) and verify, the others are left untried
+        seeds = [bytes(range(10 + i, 42 + i)) for i in range(4)]
+        keys = [("pk-%d" % k, ed25519.public_key_from_seed(seeds[k])) for k in range(4)]
+        n = 40
+        ids = ["A-%05d" % i for i in range(n)]
+        recs = [{"name": "i%d" % i, "kind": "interception", "commitment": [B.h("c%d" % i)], "seed": seeds[i % 4]}
+                for i in range(n)] + [{"name": "seal", "kind": "sealed", "seed": seeds[0]}]
+        rows = [{"attackId": a, "containmentObserved": "egress_captured", "basis": "substrate", "method": "intercepted",
+                 "attribution": "paired", "actualLayer": "x", "refs": ["i%d" % i]} for i, a in enumerate(ids)]
+        st, _ = B.build(classes={"CO": ids}, expectedPayloads=None, assessedClasses=["CO"], records=recs, rows=rows,
+                        observedAttacks=[])
+        for rec in st["predicate"]["observationRecords"]:
+            del rec["signatures"][0]["keyid"]
+        honest = Verifier(keys).verify_bytes(B.dumps(st))
+        self.assertEqual(honest.to_json_line()["tiers"], ["attested"] * n)
+        self.assertFalse(any("limit, SPEC_NOTES N63" in x for x in honest.notes), honest.notes)
+        for i, rec in enumerate(st["predicate"]["observationRecords"]):
+            rec["signatures"] = [dict(fake(i * 16 + j), keyid="pk-0") for j in range(15)] + rec["signatures"]
+        with CountVerify() as c:
+            rep = Verifier(keys).verify_bytes(B.dumps(st))
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested"] * 5 + ["unattested"] * (n - 5))
+        self.assertEqual(c.failed_on_entries_that_verify_nothing(), 5 * 15 * 4)
+        self.assertLessEqual(c.calls, 5 * 15 * 4 + 5 * 4)
+        self.assertTrue(any("had 256 or more failed attempts" in x and "observationRecords 5, 6, " in x for x in rep.notes),
+                        rep.notes)
+
+    def test_one_entry_of_a_cosigner_outside_the_policy_never_costs_an_honest_statement(self):
+        # every record carries the entry of the pinned signer and one entry no pinned key verifies (a cosigner outside
+        # the policy: DSSE's multi-signature example has two entries), before or after it, with a keyid the policy
+        # does not use or none.  The limit is 1: one counted failure would leave the next record untried
+        for place in ("before", "after", "in turn"):
+            for with_keyid in (True, False):
+                st = caught_rows(8, 0)
+                for i, rec in enumerate(st["predicate"]["observationRecords"]):
+                    entries = [dict(fake(i), keyid="auditor"), dict(rec["signatures"][0], keyid="<hex>")]
+                    if place == "after" or (place == "in turn" and i % 2):
+                        entries.reverse()
+                    if not with_keyid:
+                        for entry in entries:
+                            del entry["keyid"]
+                    rec["signatures"] = entries
+                case = (place, with_keyid)
+                with CountVerify() as c:
+                    rep = Verifier(KEYS3, max_failed_verifications=1).verify_bytes(B.dumps(st))
+                self.assertEqual(rep.to_json_line()["tiers"], ["attested"] * 8, case)
+                self.assertEqual(rep.refined_tiers, ["attested-sealed"] * 8, case)
+                self.assertFalse(any("limit, SPEC_NOTES N63" in x for x in rep.notes), (case, rep.notes))
+                if place != "after":
+                    self.assertGreater(c.failed, 0, case)                # failures happened, and were not counted
+        # two such entries before the good one: the second is counted (3 failures, three pinned keys), so with the
+        # limit at 3 the first record verifies and no other is tried
+        st = caught_rows(8, 0)
+        for i, rec in enumerate(st["predicate"]["observationRecords"]):
+            rec["signatures"] = [fake(2 * i), fake(2 * i + 1), dict(rec["signatures"][0], keyid="<hex>")]
+        with CountVerify() as c:
+            rep = Verifier(KEYS3, max_failed_verifications=3).verify_bytes(B.dumps(st))
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested"] + ["unattested"] * 7)
+        self.assertEqual((c.calls, c.failed), (7, 6))
+        rep = Verifier(KEYS3, max_failed_verifications=4).verify_bytes(B.dumps(st))          # 3 < 4: one more record
+        self.assertEqual(rep.to_json_line()["tiers"], ["attested"] * 2 + ["unattested"] * 6)
 
     def test_limits_out_of_their_closed_list_are_refused_by_the_library(self):
         for name in ("max_signatures_per_record", "max_failed_verifications"):

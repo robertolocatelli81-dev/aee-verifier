@@ -62,10 +62,11 @@ Human-readable lines, then **one JSON object on the last line**:
   note or message quotes from the statement is written as `\xNN` / `\uNNNN` (SPEC_NOTES N61).
 * `tiers`: one of `declared` / `attested` / `unattested` per `attackResults` row, in order; `[]` on reject.
   Signature limits (SPEC_NOTES N63, consumer policy): a record with more than `AEE_MAX_SIGNATURES_PER_RECORD` entries
-  whose `sig` is base64 of 64 bytes (default 16) is not tried, and no further record is tried once the records that
-  verify nothing have `AEE_MAX_FAILED_VERIFICATIONS` failed verifications (default 256; the failed attempts of a record
-  that then verifies are not counted, so a statement whose every record a pinned key signed never reaches the limit,
-  whatever its `keyid`s and signer order); a record left untried verifies nothing, so a row citing it is `unattested`
+  whose `sig` is base64 of 64 bytes (default 16) is not tried, and no further record is tried once the signature
+  entries that verify nothing have `AEE_MAX_FAILED_VERIFICATIONS` counted failed verifications (default 256; on a record
+  that verifies, those of one such entry are not counted, nor those of the entry that verifies, so a statement whose
+  every record a pinned key signed, with at most one more entry on each record, never reaches the limit, whatever its
+  `keyid`s, entry order and signer order); a record left untried verifies nothing, so a row citing it is `unattested`
   where the spec alone (L769–L771) would say `attested`, and a note names the records. A limit never makes a row
   `attested`.
   A refinement of `attested` (spec L775–L778, SPEC_NOTES N64) is derived beside the tiers and never enters the JSON
@@ -176,7 +177,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 281 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 283 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -198,7 +199,7 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   entries the loader does not use are each named in a warning (3000 generated entries), and a member name repeated
   in the policy makes it unusable.
 * `tests/test_fix_20261120.py` (21 tests): the defects re-measured on cbb79e5 on 2026-11-20, each test failing there except the guards that check a fix does not over-report, and four defects of the first form of these fixes (68c6507: unread members collected in time quadratic in their number; a list of names cut at 160 characters without a word; memory exhausted after the read still a traceback and exit 1; the note on `networkPosture`): a row repeating `observationRefs` indexes cost time quadratic in the repeats (N23); a member name holding a line break forged lines of the human-readable output (N61); an input larger than the memory the process may use ended in a traceback, exit 1 and no JSON line (N61); members nothing reads, inside the predicate's objects, and signature entries that verify nothing were not named (N59); the key policy of N60 was applied by the command line only, not by `Verifier(keys)` used as a library (N60).
-* `tests/test_decisions_20261120.py` (35 tests): the consumer policies decided on 2026-11-20, each test failing on
+* `tests/test_decisions_20261120.py` (37 tests): the consumer policies decided on 2026-11-20, each test failing on
   64227ea except four guards (an unhashable `keyid` is no crash; a name that only looks reserved stays an
   unrecognized member; the refinement leaves the JSON line and the exit status as they were; so do the signatures of
   the records that cover nothing): the input size limit (N62); the signature limits (N63),
@@ -208,10 +209,11 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   (a limit variable of more than 4300 digits; `AEE_MAX_FAILED_VERIFICATIONS` read by the command line), three pin
   what no test read there (a record left untried named once; no attested row, no verification of the seal; a kind
   that is not one of the two registered is not verified by N65); the fourth, on two pinned keys signing in turn
-  without keyids, is replaced by three tests of the counting rule of 2026-11-21 (an honest statement, 1 to 4 pinned keys
-  signing in turn with the policy's `keyid`, none or another, never reaches even a limit of 1; the failed attempts of
-  a record that verifies are not counted, those of one that does not are; a record left untried stays unverified for
-  every row that cites it).
+  without keyids, is replaced by five tests of the counting rule of 2026-11-21 (an honest statement, 1 to 4 pinned keys
+  signing in turn with the policy's `keyid`, none or another, never reaches even a limit of 1; nor does one whose
+  records each carry one entry of a cosigner outside the policy; entries that verify nothing are counted also on a
+  record that verifies, but for one; a statement of records signed by pinned keys, padded with 15 such entries on each
+  record, is stopped; a record left untried stays unverified for every row that cites it).
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
   after the integer bound in `jcs.format_number`; `cli.py` and `ed25519.py` re-measured 2026-11-14 after N60; the 3 sites
   added to `verifier.py` on 2026-11-15 by the negative `aeeDropCount` rule measured on 2026-11-16, all killed):
@@ -222,7 +224,7 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   2026-11-20 and the decisions of the same day added lines (`tests/mutate.py` now finds 618 sites in `verifier.py` and
   46 in `cli.py`, 971 in the six modules) and only the sites on the lines they changed were run, with the same operators:
   for the fixes, `verifier.py` 27 sites, 25 killed, `cli.py` 5 sites, 4 killed; for the decisions (lines that differ
-  from 64227ea), `verifier.py` 45 sites, 44 killed, `cli.py` 15 sites, 12 killed; for N65, 3 sites, 3 killed; for the limit variables read block by block (2026-11-21), `cli.py` 7 sites, 7 killed; for the counting rule of N63 (2026-11-21), `verifier.py` 7 sites, 7 killed; every survivor is equivalent
+  from 64227ea), `verifier.py` 45 sites, 44 killed, `cli.py` 15 sites, 12 killed; for N65, 3 sites, 3 killed; for the limit variables read block by block (2026-11-21), `cli.py` 7 sites, 7 killed; for the counting rule of N63 (2026-11-21), `verifier.py` 7 sites, 7 killed; for its second form (the same day), `verifier.py` 3 sites, 3 killed; every survivor is equivalent
   (`tests/MUTATION.md`, last two sections). The four survivors of cbb79e5 on the key ordering are gone with the
   rewritten loop.
 

@@ -1160,32 +1160,36 @@ class Verifier:
                 over_cap.append(rec.index)
                 sigs = []
             sigs.sort(key=lambda t: t[0])                       # stable: entries hinting a pinned keyid first
-            # The failed attempts of a record count against the limit only when the record verifies nothing, and the
-            # limit is checked before a record is tried, never in the middle of one: a statement whose every record a
-            # pinned key signed never reaches it, whatever its keyids, signer order or number of pinned keys (until
-            # 2026-11-21 every failed attempt counted: two or three keys signing in turn with no keyid, or one the
-            # policy does not use, cost one failure per record, and an honest statement lost attestations from its
-            # 193rd or 257th row).  Cost: the records that verify nothing are tried until their failed attempts reach
-            # the limit, the last one in full, so they cost at most max_failed_verifications - 1 +
-            # max_signatures_per_record x len(keys) attempts; a record that verifies costs at most
-            # max_signatures_per_record x len(keys), and only a payload a pinned key signed can verify (a payload is
-            # carried once: duplicate-record).
+            # What counts against the limit: the failed attempts of every entry that verifies under no pinned key.  On a
+            # record that verifies, those of one such entry (the first tried) are not counted: a record signed by a
+            # pinned key and by one cosigner outside the policy is DSSE's multi-signature example, two entries.  The
+            # failed attempts of the entry that verifies never count.  The limit is checked before a record is tried,
+            # never in the middle of one.  So a statement whose every record a pinned key signed, with at most one
+            # more entry on each record, never reaches the limit, whatever its keyids, entry order, signer order or
+            # number of pinned keys.  History: until 2026-11-21 every failed attempt counted (two or three keys signing
+            # in turn with no keyid: an honest statement lost attestations from its 193rd or 257th row); cc84be9
+            # counted none on a record that verifies, so entries that verify nothing put before the good entry of
+            # each record were free, up to max_signatures_per_record - 1 on each (SPEC_NOTES N63 has the measure).
+            # Cost of a statement: counted failures at most max_failed_verifications - 1 + max_signatures_per_record x
+            # len(keys); beside them at most 2 x len(keys) attempts for each record that verifies, and only a payload a
+            # pinned key signed can verify (a payload is carried once: duplicate-record).
             if sigs and state["failed"] >= self.max_failed_verifications:
                 untried.append(rec.index)
                 verified_cache[rec.index] = False
                 return False
-            here = 0
+            spent = []                                          # failed attempts of each entry that verified nothing
             for _, hint, raw in sigs:
+                tried = 0
                 for k in key_order(hint):
                     if ed25519.verify(k[1], rec.pae, raw):
                         state["last_ok"] = k
                         ok = True
                         break
-                    here += 1
+                    tried += 1
                 if ok:
                     break
-            if not ok:
-                state["failed"] += here
+                spent.append(tried)
+            state["failed"] += sum(spent[1:] if ok else spent)
             verified_cache[rec.index] = ok
             return ok
 
@@ -1227,7 +1231,7 @@ class Verifier:
                              "so they verify nothing and a row citing them is not attested"
                              % (listed([str(i) for i in over_cap]), self.max_signatures_per_record))
         if untried:
-            rep.notes.append("signature verification stopped once records that verify nothing had %d or more failed attempts "
+            rep.notes.append("signature verification stopped once the counted signature entries had %d or more failed attempts "
                              "(limit, SPEC_NOTES N63): "
                              "observationRecords %s not tried, so they verify nothing and a row citing them is not "
                              "attested" % (self.max_failed_verifications, listed([str(i) for i in untried])))
