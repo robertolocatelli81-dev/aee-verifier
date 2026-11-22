@@ -7,7 +7,7 @@ v0.12.1 and the material listed under "Sources used", for the Empirical Software
 "do independent builds of one spec share mistakes?" (finos/ai-governance-framework#337,
 `docs/study/emse-2026/builders.md`).
 
-Version 0.2.0 — released on 2026-11-21; the changes since 0.1.0 (the code of `main` at cbb79e5, never released as a
+Version 0.2.0 — released on 2026-11-22; the changes since 0.1.0 (the code of `main` at cbb79e5, never released as a
 package) are in `CHANGELOG.md`.
 
 It reads one statement and decides whether it is valid: for a valid statement

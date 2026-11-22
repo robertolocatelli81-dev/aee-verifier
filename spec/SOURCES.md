@@ -2,11 +2,12 @@
 
 | File | Source | Version | License |
 |---|---|---|---|
-| `adversarial-execution-evidence-v0.12.1.md` | https://github.com/probityai/agent-evidence-vectors `spec/predicates/adversarial-execution-evidence.md` (also in the PyPI distribution `agent-evidence-vectors` 0.12.1) | 0.12.1; the same bytes are on `main` and in 0.37.1 (checked on 2026-11-20) | Apache-2.0 (the repository's LICENSE; PyPI metadata of 0.12.1: license Apache-2.0, author Sankalp Gilda) |
+| `adversarial-execution-evidence-v0.12.1.md` | https://github.com/probityai/agent-evidence-vectors `spec/predicates/adversarial-execution-evidence.md` at tag `v0.12.1` (the PyPI distribution `agent-evidence-vectors` 0.12.1 does not carry this file) | 0.12.1; the same bytes at tag `v0.37.1` and on `main` (517f774) (checked on 2026-11-22) | Apache-2.0 (the repository's LICENSE; PyPI metadata of 0.12.1: license Apache-2.0, author Sankalp Gilda) |
 | `pypi-0.12.1-README-what-the-suite-compares.md` | three sections of the README of `agent-evidence-vectors` 0.12.1 on PyPI: "What the suite compares", "The registry", "Indeterminate vectors" | 0.12.1 | Apache-2.0, as above |
 
-The text of the Apache License 2.0 is `LICENSE` at the root of this repository; the upstream repository carries no
-NOTICE file (checked on 2026-11-21).
+The text of the Apache License 2.0 is `LICENSE` at the root of this repository; the upstream repository has no
+NOTICE file at its root, and none of its NOTICE files (in folders of third-party material) covers `spec/` (checked
+on 2026-11-22 at 517f774).
 
 SHA-256:
 

@@ -3,7 +3,7 @@
 0.1.0 is the code of `main` at cbb79e5 (no tag was made of it). The sections of SPEC_NOTES named below give every
 rule with the measure behind it.
 
-## 0.2.0 — released on 2026-11-21: outputs change
+## 0.2.0 — released on 2026-11-22: outputs change
 
 Verdicts, exit statuses and tiers change only in the cases listed here. The 225 tests of 0.1.0
 (`tests/test_verifier.py` 163, `test_units.py` 27, `test_review_fixes.py` 26, `test_interop_20261114.py` 9, as they

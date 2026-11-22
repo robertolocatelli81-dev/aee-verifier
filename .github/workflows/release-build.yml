@@ -38,7 +38,8 @@ jobs:
           cd ../installed
           python -c "import aee_verifier, os, sys; p = aee_verifier.__file__; print(p); sys.exit('site-packages' not in p)"
           python -m unittest discover -s tests -p "test_*.py"
-          aee-verify --help || [ $? -eq 2 ]
+          rc=0; aee-verify --help >/dev/null || rc=$?
+          [ "$rc" -eq 2 ] || { echo "aee-verify --help exited $rc, expected 2"; exit 1; }
       - uses: actions/upload-artifact@v7
         with:
           name: dist

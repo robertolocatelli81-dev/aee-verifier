@@ -3,6 +3,7 @@ the README and the CHANGELOG give the same release date (0.2.0, the first releas
 
 from __future__ import annotations
 
+import datetime
 import os
 import re
 import sys
@@ -42,6 +43,7 @@ class TestRelease(unittest.TestCase):
         self.assertEqual(readme[0][0], VERSION)
         self.assertEqual(changelog[0], readme[0])                 # the newest section is this release, same date
         self.assertTrue(DATE.fullmatch(readme[0][1]), readme)
+        datetime.date.fromisoformat(readme[0][1])                 # a calendar date (2026-02-30 is refused)
         self.assertNotIn("unreleased", read("README.md").lower().split("## install")[0])
         self.assertEqual(len(re.findall(r"(?m)^## %s\b" % re.escape(VERSION), read("CHANGELOG.md"))), 1)
 
