@@ -3,7 +3,7 @@
 0.1.0 is the code of `main` at cbb79e5 (no tag was made of it). The sections of SPEC_NOTES named below give every
 rule with the measure behind it.
 
-## Unreleased
+## 0.2.1 — released on 2026-11-27: a secret given does not come out
 
 A secret given to the verifier does not come out of it (SPEC_NOTES N66, `tests/test_secrets_20261127.py`). Measured
 on 0.2.0 (the PyPI wheel, whose package files are those of the tag): 6 of the 13 new tests fail there. A key set

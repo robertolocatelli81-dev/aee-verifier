@@ -15,7 +15,7 @@ sys.path.insert(0, ROOT)
 
 import aee_verifier  # noqa: E402
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 

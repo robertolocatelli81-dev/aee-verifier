@@ -7,8 +7,7 @@ v0.12.1 and the material listed under "Sources used", for the Empirical Software
 "do independent builds of one spec share mistakes?" (finos/ai-governance-framework#337,
 `docs/study/emse-2026/builders.md`).
 
-Version 0.2.0 — released on 2026-11-22; the changes since 0.1.0 (the code of `main` at cbb79e5, never released as a
-package) are in `CHANGELOG.md`.
+Version 0.2.1 — released on 2026-11-27; the changes since 0.2.0 are in `CHANGELOG.md`.
 
 It reads one statement and decides whether it is valid: for a valid statement
 it prints the recomputed `result` and the per-row evidence tiers; for an
@@ -19,13 +18,13 @@ invalid one it prints the conditions it violated.
 ```bash
 # from the author's PEP 503 index (the wheel and sdist of the GitHub Release; the links carry #sha256= fragments,
 # so pip checks every download)
-pip install --index-url https://robertolocatelli81-dev.github.io/pypi/ aee-verifier==0.2.0
+pip install --index-url https://robertolocatelli81-dev.github.io/pypi/ aee-verifier==0.2.1
 
 # from PyPI, once the release is uploaded there (Trusted Publishing, from the files of the GitHub Release)
-pip install aee-verifier==0.2.0
+pip install aee-verifier==0.2.1
 
 # or straight from the tagged source
-pip install git+https://github.com/robertolocatelli81-dev/aee-verifier@v0.2.0
+pip install git+https://github.com/robertolocatelli81-dev/aee-verifier@v0.2.1
 ```
 
 No dependency is installed: the package uses the standard library only. The wheel, the sdist and `SHA256SUMS` are
@@ -247,7 +246,7 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   an audit hook checks that no process, connection or write is made; three positive controls. Six of the tests fail
   on 0.2.0.
 * `tests/test_release_020.py` (4 tests): the version in the code, in `pyproject.toml`, in the README and in the
-  CHANGELOG is 0.2.0, the README and the CHANGELOG give the same release date, the install lines name this version.
+  CHANGELOG is 0.2.1, the README and the CHANGELOG give the same release date, the install lines name this version.
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
   after the integer bound in `jcs.format_number`; `cli.py` and `ed25519.py` re-measured 2026-11-14 after N60; the 3 sites
   added to `verifier.py` on 2026-11-15 by the negative `aeeDropCount` rule measured on 2026-11-16, all killed):
