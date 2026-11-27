@@ -3,6 +3,25 @@
 0.1.0 is the code of `main` at cbb79e5 (no tag was made of it). The sections of SPEC_NOTES named below give every
 rule with the measure behind it.
 
+## Unreleased
+
+A secret given to the verifier does not come out of it (SPEC_NOTES N66, `tests/test_secrets_20261127.py`). Measured
+on 0.2.0 (the PyPI wheel, whose package files are those of the tag): 6 of the 13 new tests fail there. A key set
+where the `AEE_SUBSTRATE_KEYS` path goes, a key used as a member name, `keyid` or repeated name of the key policy,
+and a value of a limit variable were written to stderr; a policy file that is not UTF-8 had one byte written. Now:
+
+- warnings show a name or `keyid` of the key policy only when it is a string of at most 32 characters, otherwise its
+  length (or the type of a value that is not a string);
+- why the key policy could not be read is said by the exception's type, errno name, JSON line and column, never by
+  its text; the path in `AEE_SUBSTRATE_KEYS` and the value of a limit variable only by their length;
+- a key-policy entry carrying a private JWK member (`d`, `p`, `q`, `dp`, `dq`, `qi`, `oth`, `k`; RFC 7518 section
+  6, RFC 8037 section 2) is skipped with a warning naming the member; in 0.2.0 it was kept. This is the only change of
+  outcome: such an entry no longer pins its key.
+
+Unchanged: verdicts, codes, exit statuses and the JSON line for every other input; a private key file where the
+policy goes and secrets elsewhere in the environment came out nowhere on 0.2.0 either. The CI runs on every branch,
+on Linux, macOS and Windows.
+
 ## 0.2.0 — released on 2026-11-22: outputs change
 
 Verdicts, exit statuses and tiers change only in the cases listed here. The 225 tests of 0.1.0

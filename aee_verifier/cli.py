@@ -23,6 +23,7 @@ the predicate.  A set but unusable policy file is treated the same way
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import sys
@@ -38,6 +39,35 @@ ENV_MAX_INPUT = "AEE_MAX_INPUT_BYTES"
 ENV_MAX_SIGNATURES = "AEE_MAX_SIGNATURES_PER_RECORD"
 ENV_MAX_FAILED = "AEE_MAX_FAILED_VERIFICATIONS"
 READ_CHUNK = 1 << 20
+NAME_CHARS = 32
+# the private members of a JWK: RFC 7518 6.2.2.1 (EC "d"), 6.3.2 (RSA "d" "p" "q" "dp" "dq" "qi" "oth"), 6.4.1
+# (symmetric "k"), RFC 8037 2 (OKP "d"); a policy entry carrying one is refused (SPEC_NOTES N66)
+PRIVATE_MEMBERS = ("d", "dp", "dq", "k", "oth", "p", "q", "qi")
+
+
+def shown(name) -> str:
+    """A name or keyid of the key policy as a message shows it (N66): its repr up to NAME_CHARS characters, otherwise
+    only its length, and a value that is not a string only by its type -- so a key pasted where a name goes is never
+    repeated (measured on 0.2.0, 2026-11-27: a 64-hex member name, keyid or duplicate name was written to stderr)."""
+    if isinstance(name, str):
+        return repr(name) if len(name) <= NAME_CHARS else "a name of %d characters" % len(name)
+    return "a value of type %s" % type(name).__name__
+
+
+def why(exc: BaseException) -> str:
+    """Why the key policy could not be read, without its text (N66): the type, the errno name of an OSError (whose
+    text repeats the path), the line and column of a JSON error, the names (as ``shown``) of duplicate members."""
+    if isinstance(exc, DuplicateMembers):
+        return str(exc)
+    if isinstance(exc, json.JSONDecodeError):
+        return "%s at line %d column %d" % (type(exc).__name__, exc.lineno, exc.colno)
+    if isinstance(exc, OSError) and exc.errno in errno.errorcode:
+        return "%s (%s)" % (type(exc).__name__, errno.errorcode[exc.errno])
+    return type(exc).__name__
+
+
+class DuplicateMembers(ValueError):
+    pass
 
 
 def limit_from_env(name: str, default: int) -> int:
@@ -47,7 +77,7 @@ def limit_from_env(name: str, default: int) -> int:
     if raw is None:
         return default
     if not (raw.isascii() and raw.isdigit()):
-        raise ValueError("%s=%r is not a positive decimal integer" % (name, raw))
+        raise ValueError("%s is not a positive decimal integer (a value of %d characters)" % (name, len(raw)))
     # the value is built 4000 digits at a time: int() refuses a string of more than 4300 digits (CPython's limit on
     # str -> int), and until 2026-11-21 such a value, digits only and at least 1, was a usage error that did not name
     # the variable (measured on d0b8d7a with 5000 digits, CPython 3.9.25, 3.11.2, 3.13.15)
@@ -55,7 +85,7 @@ def limit_from_env(name: str, default: int) -> int:
     for i in range(0, len(raw), 4000):
         value = value * 10 ** len(raw[i:i + 4000]) + int(raw[i:i + 4000])
     if value < 1:
-        raise ValueError("%s=%r is not a positive decimal integer" % (name, raw))
+        raise ValueError("%s is not a positive decimal integer (a value of %d characters)" % (name, len(raw)))
     return value
 
 
@@ -97,7 +127,7 @@ def _no_duplicate_members(pairs):
     names = [k for k, _ in pairs]
     dup = sorted(set(k for k in names if names.count(k) > 1))
     if dup:                                # N60: RFC 7493 2.3, as strict_json does for the statement
-        raise ValueError("duplicate member(s) %s" % ", ".join(repr(k) for k in dup))
+        raise DuplicateMembers("duplicate member(s) %s" % ", ".join(shown(k) for k in dup))
     return dict(pairs)
 
 
@@ -107,8 +137,9 @@ def load_key_policy(path: Optional[str], warn) -> Optional[List[Tuple[str, bytes
     try:
         with open(path, "rb") as fh:
             doc = json.loads(fh.read().decode("utf-8"), object_pairs_hook=_no_duplicate_members)
-    except Exception as exc:  # fail-closed: no keys
-        warn("%s=%r could not be read as JSON (%s); treating as no pinned key" % (ENV_KEYS, path, exc))
+    except Exception as exc:  # fail-closed: no keys; neither the path (it may be a key set by mistake) nor the text
+        warn("%s (a path of %d characters) could not be read as JSON (%s); treating as no pinned key"
+             % (ENV_KEYS, len(path), why(exc)))
         return None
     keys: List[Tuple[str, bytes]] = []
     entries = doc.get("substrateObservationKeys") if isinstance(doc, dict) else None
@@ -117,14 +148,19 @@ def load_key_policy(path: Optional[str], warn) -> Optional[List[Tuple[str, bytes
         return None
     top = sorted(k for k in doc if k != "substrateObservationKeys")
     if top:                                # N60: named, never ignored in silence
-        warn("%s: member(s) %s not read" % (ENV_KEYS, ", ".join(repr(k) for k in top)))
+        warn("%s: member(s) %s not read" % (ENV_KEYS, ", ".join(shown(k) for k in top)))
     for n, e in enumerate(entries):
         if not isinstance(e, dict):        # N60: named, never skipped in silence
             warn("%s: entry %d is not an object; skipped" % (ENV_KEYS, n))
             continue
         extra = sorted(k for k in e if k not in ENTRY_MEMBERS)
+        private = [k for k in extra if k in PRIVATE_MEMBERS]
+        if private:                        # N66: a private key has no place in the policy; its value is never read
+            warn("%s: entry %d carries private key member(s) %s; skipped (SPEC_NOTES N66)"
+                 % (ENV_KEYS, n, ", ".join(shown(k) for k in private)))
+            continue
         if extra:
-            warn("%s: entry %d: member(s) %s not read" % (ENV_KEYS, n, ", ".join(repr(k) for k in extra)))
+            warn("%s: entry %d: member(s) %s not read" % (ENV_KEYS, n, ", ".join(shown(k) for k in extra)))
         hexkey = e.get("publicKeyHex")
         keyid = e.get("keyid")
         try:
@@ -132,14 +168,14 @@ def load_key_policy(path: Optional[str], warn) -> Optional[List[Tuple[str, bytes
         except ValueError:
             raw = b""
         if len(raw) != 32:
-            warn("%s: key %r is not a 32-byte (Ed25519) public key; skipped" % (ENV_KEYS, keyid))
+            warn("%s: key %s is not a 32-byte (Ed25519) public key; skipped" % (ENV_KEYS, shown(keyid)))
             continue
         weak = ed25519.point_class(raw)
         if weak != "prime-order":          # N60: a key of small or mixed order attests nothing
-            warn("%s: key %r is %s; skipped (SPEC_NOTES N60)" % (ENV_KEYS, keyid, weak))
+            warn("%s: key %s is %s; skipped (SPEC_NOTES N60)" % (ENV_KEYS, shown(keyid), weak))
             continue
         if not isinstance(keyid, str):
-            warn("%s: entry %d: keyid %r is not a string; key kept with no keyid hint" % (ENV_KEYS, n, keyid))
+            warn("%s: entry %d: keyid (%s) is not a string; key kept with no keyid hint" % (ENV_KEYS, n, shown(keyid)))
             keyid = ""
         keys.append((keyid, raw))
     return keys

@@ -1,8 +1,10 @@
 name: ci
 on:
   push:
-    branches: [main]
+    branches: ["**"]
   pull_request:
+permissions:
+  contents: read
 jobs:
   tests:
     # 3.9 has no setup-python build for ubuntu-26.04, which `ubuntu-latest` is becoming between 2026-10-19 and 2026-11-19
@@ -10,7 +12,7 @@ jobs:
     runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
     strategy:
       matrix:
-        python-version: ["3.9", "3.11", "3.13"]   # the README declares 3.9 or later: the floor is tested too
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]   # pyproject declares 3.9 or later: every version from the floor
     steps:
       - uses: actions/checkout@v7       # Node 24: Node 20 actions are no longer run (GitHub changelog, 2026-09-23)
       - uses: actions/setup-python@v7
@@ -38,12 +40,13 @@ jobs:
           check test_fix_20261120 21 "OK"
           check test_decisions_20261120 38 "OK"
           check test_release_020 4 "OK"
-      - name: The whole suite through discovery (288 tests, as the README states; the only skip is the cryptography oracle)
+          check test_secrets_20261127 13 "OK"
+      - name: The whole suite through discovery (301 tests, as the README states; the only skip is the cryptography oracle)
         run: |
           set -e
           out=$(python -m unittest discover -s tests -p "test_*.py" 2>&1) || { echo "$out"; exit 1; }
           echo "$out" | tail -3
-          echo "$out" | grep -qx "Ran 288 tests in [0-9.]*s" || { echo "::error::discovery did not run 288 tests"; exit 1; }
+          echo "$out" | grep -qx "Ran 301 tests in [0-9.]*s" || { echo "::error::discovery did not run 301 tests"; exit 1; }
           [ "$(echo "$out" | tail -1)" = "OK (skipped=1)" ] || { echo "::error::expected exactly one skipped test (the cryptography oracle)"; exit 1; }
       - name: "The optional cryptography oracle of tests/test_units.py, skipped above, runs with cryptography installed: 27 tests, no skip"
         run: |
@@ -53,3 +56,28 @@ jobs:
           echo "$out" | tail -3
           echo "$out" | grep -qx "Ran 27 tests in [0-9.]*s" || { echo "::error::did not run 27 tests"; exit 1; }
           [ "$(echo "$out" | tail -1)" = "OK" ] || { echo "::error::the cryptography oracle was still skipped"; exit 1; }
+  secrets-macos-windows:
+    # SPEC_NOTES N66 on the other two systems: the test uses os.path, errno names and an audit hook, nothing POSIX-only.
+    # The rest of the suite is not run here yet: it uses resource (RLIMIT_AS), /dev/zero, preexec_fn and the shebang
+    # launcher, whose Windows equivalents (a Job Object memory limit, an endless named pipe, sys.executable) are to be written
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: "tests/test_secrets_20261127.py: 13 tests, OK"
+        run: |
+          set -e
+          out=$(python -m unittest tests.test_secrets_20261127 2>&1) || { echo "$out"; exit 1; }
+          echo "$out" | tail -3
+          echo "$out" | grep -qx "Ran 13 tests in [0-9.]*s" || { echo "::error::did not run 13 tests"; exit 1; }
+          [ "$(echo "$out" | tail -1)" = "OK" ] || { echo "::error::expected OK"; exit 1; }

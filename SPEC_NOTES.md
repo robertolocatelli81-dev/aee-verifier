@@ -364,3 +364,24 @@ under the limits of N63), after the tiers and the refinement of N64 so that it n
 needs; a record that does not verify is listed in `Report.non_covering_unverified` and named in a note. Verdict,
 codes, `result`, `tiers` and the refinement do not move: these kinds cover nothing, and the spec gives their
 signature outcome no effect on any of them. Without a key policy nothing is verified (as for every record, L772–L774).
+
+**N66. A secret given to the verifier does not come out of it (2026-11-27).** The inputs that can carry a secret are
+the key policy file, the value of `AEE_SUBSTRATE_KEYS` and the values of the three limit variables; the statement is
+the public evidence the verifier is asked about and its text is quoted on purpose (N61). Measured on 0.2.0 (the tag
+v0.2.0; the package files of the PyPI wheel are the same) with `tests/test_secrets_20261127.py`: a 64-hex canary set
+as `AEE_SUBSTRATE_KEYS` (a key where the path goes) was written twice to stderr (the value and the text of the
+`OSError`), and so was a canary used as a member name of the policy, as a `keyid`, as a repeated member name, or as
+the value of `AEE_MAX_INPUT_BYTES`, `AEE_MAX_SIGNATURES_PER_RECORD` or `AEE_MAX_FAILED_VERIFICATIONS`; a policy file
+that is not UTF-8 had one of its bytes written (`can't decode byte 0x..`). A private key file (raw seed, hex, PKCS#8
+PEM, private JWK, base64) where the policy goes, and secrets elsewhere in the environment, came out nowhere; the
+verifier starts no process, opens no connection and writes no file (an audit hook in the test checks the three).
+**Rule (closed list of what is shown):** a member name or `keyid` of the policy is shown as written only when it is a
+string of at most 32 characters; a longer one only by its length, a value that is not a string only by its type. Why
+the policy could not be read is said by the exception's type, with the errno name of an `OSError`, the line and column
+of a JSON error, or the duplicate names as above; never by its text. The path in `AEE_SUBSTRATE_KEYS` and the value
+of a limit variable are said only by their length (the variable is still named). An entry carrying a private member
+of a JWK -- `d` (RFC 7518 6.2.2.1, RFC 8037 2), `p`, `q`, `dp`, `dq`, `qi`, `oth` (RFC 7518 6.3.2), `k` (RFC 7518
+6.4.1); RFC 7518 and RFC 8037 are Proposed Standards, updated by RFC 9864 in their algorithm identifiers only,
+datatracker 2026-11-27 -- is skipped with a warning naming the member, never its value: a private key has no place in
+a consumer's trust input; until 0.2.0 the entry was kept and the member named as not read. Verdicts, codes and the
+JSON line do not move except that such an entry no longer pins its key.

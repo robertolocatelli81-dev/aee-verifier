@@ -200,7 +200,7 @@ requirement-by-requirement inventory is in `REQUIREMENTS.md`.
 ## Tests
 
 ```
-python3 -m unittest discover -s tests -p "test_*.py"     # 288 tests
+python3 -m unittest discover -s tests -p "test_*.py"     # 301 tests
 python3 tests/mutate.py --module verifier               # mutation testing (positive control)
 ```
 
@@ -239,6 +239,12 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
   record, is stopped; a record left untried stays unverified for every row that cites it). One more (0.2.0): the note
   of the second limit says how many counted entries were on records that then verified and how many on records that
   verified nothing.
+* `tests/test_secrets_20261127.py` (13 tests): a secret given to the verifier does not come out of it (SPEC_NOTES
+  N66): a canary in the key policy (a private key file where the policy goes, a private JWK member in an entry, a key
+  where a name or `keyid` goes), in `AEE_SUBSTRATE_KEYS` and in the three limit variables is searched raw, in hex,
+  decimal, base64 and base64url, and as any 12-character piece, in stdout, stderr, the warnings and the files left;
+  an audit hook checks that no process, connection or write is made; three positive controls. Six of the tests fail
+  on 0.2.0.
 * `tests/test_release_020.py` (4 tests): the version in the code, in `pyproject.toml`, in the README and in the
   CHANGELOG is 0.2.0, the README and the CHANGELOG give the same release date, the install lines name this version.
 * Mutation testing (`tests/mutate.py`, re-measured 2026-10-21 on CPython 3.11.2
