@@ -378,8 +378,11 @@ verifier starts no process, opens no connection and writes no file (an audit hoo
 **Rule (closed list of what is shown):** a member name or `keyid` of the policy is shown as written only when it is a
 string of at most 32 characters; a longer one only by its length, a value that is not a string only by its type. Why
 the policy could not be read is said by the exception's type, with the errno name of an `OSError`, the line and column
-of a JSON error, or the duplicate names as above; never by its text. The path in `AEE_SUBSTRATE_KEYS` and the value
-of a limit variable are said only by their length (the variable is still named). An entry carrying a private member
+of a JSON error, or the duplicate names as above; never by its text. The path in `AEE_SUBSTRATE_KEYS`, the statement
+path and the value of a limit variable are said only by their length (the variable is still named); a warning about a
+policy entry names it by its index. A name of at most 32 characters is shown as written: a secret that short (a 128-bit
+key in hex) put where a name goes still comes out, every form of an Ed25519 private key is longer. The policy file is
+read under the input limit of N62. An entry carrying a private member
 of a JWK -- `d` (RFC 7518 6.2.2.1, RFC 8037 2), `p`, `q`, `dp`, `dq`, `qi`, `oth` (RFC 7518 6.3.2), `k` (RFC 7518
 6.4.1); RFC 7518 and RFC 8037 are Proposed Standards, updated by RFC 9864 in their algorithm identifiers only,
 datatracker 2026-11-27 -- is skipped with a warning naming the member, never its value: a private key has no place in

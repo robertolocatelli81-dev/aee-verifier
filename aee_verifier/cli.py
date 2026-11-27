@@ -134,9 +134,8 @@ def _no_duplicate_members(pairs):
 def load_key_policy(path: Optional[str], warn) -> Optional[List[Tuple[str, bytes]]]:
     if not path:
         return None
-    try:
-        with open(path, "rb") as fh:
-            doc = json.loads(fh.read().decode("utf-8"), object_pairs_hook=_no_duplicate_members)
+    try:                                   # bounded as the statement is (N62): an endless device stops at the limit
+        doc = json.loads(read_limited(path, MAX_INPUT_BYTES).decode("utf-8"), object_pairs_hook=_no_duplicate_members)
     except Exception as exc:  # fail-closed: no keys; neither the path (it may be a key set by mistake) nor the text
         warn("%s (a path of %d characters) could not be read as JSON (%s); treating as no pinned key"
              % (ENV_KEYS, len(path), why(exc)))
@@ -168,11 +167,11 @@ def load_key_policy(path: Optional[str], warn) -> Optional[List[Tuple[str, bytes
         except ValueError:
             raw = b""
         if len(raw) != 32:
-            warn("%s: key %s is not a 32-byte (Ed25519) public key; skipped" % (ENV_KEYS, shown(keyid)))
+            warn("%s: entry %d: key %s is not a 32-byte (Ed25519) public key; skipped" % (ENV_KEYS, n, shown(keyid)))
             continue
         weak = ed25519.point_class(raw)
         if weak != "prime-order":          # N60: a key of small or mixed order attests nothing
-            warn("%s: key %s is %s; skipped (SPEC_NOTES N60)" % (ENV_KEYS, shown(keyid), weak))
+            warn("%s: entry %d: key %s is %s; skipped (SPEC_NOTES N60)" % (ENV_KEYS, n, shown(keyid), weak))
             continue
         if not isinstance(keyid, str):
             warn("%s: entry %d: keyid (%s) is not a string; key kept with no keyid hint" % (ENV_KEYS, n, shown(keyid)))
@@ -216,7 +215,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         # MemoryError: an input larger than the memory the process may use (an endless device such as /dev/zero,
         # or a huge file) ended in a traceback, exit 1 -- the reject status -- and no JSON line (measured on
         # cbb79e5 under ulimit -v 600000, 2026-11-20); it is input the verifier could not read: exit 2, as documented.
-        sys.stderr.write(one_line("error: cannot read %s: %s" % (argv[0], exc if str(exc) else type(exc).__name__)) + "\n")
+        # N66: the path by its length, as the one of AEE_SUBSTRATE_KEYS (a key typed where the path goes came out twice)
+        sys.stderr.write(one_line("error: cannot read the statement (a path of %d characters): %s" % (
+            len(argv[0]), exc if isinstance(exc, InputTooLarge) else why(exc))) + "\n")
         emit({"verdict": "error", "codes": ["unreadable-input"], "result": None, "tiers": []})
         return 2
 
@@ -228,7 +229,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         # the input was read but is larger than the memory left to parse it (measured on 68c6507: 150 MiB under
         # ulimit -v 600000 ended in a traceback and exit 1, the reject status): the same answer as above
         del data
-        sys.stderr.write(one_line("error: cannot read %s: MemoryError" % argv[0]) + "\n")
+        sys.stderr.write("error: cannot read the statement (a path of %d characters): MemoryError\n" % len(argv[0]))
         emit({"verdict": "error", "codes": ["unreadable-input"], "result": None, "tiers": []})
         return 2
     for note in report.notes:

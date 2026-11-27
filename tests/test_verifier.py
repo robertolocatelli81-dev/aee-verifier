@@ -1378,7 +1378,10 @@ class TestCLI(unittest.TestCase):
             path = os.path.join(d, "s.json")
             with open(path, "wb") as fh:
                 fh.write(B.dumps(B.scenario_degraded()[0]))
-            proc = subprocess.run([os.path.join(ROOT, "aee-verify"), path], stdout=subprocess.PIPE)
+            launcher = [os.path.join(ROOT, "aee-verify")]
+            if os.name != "posix":          # no shebang on Windows: the same file through the interpreter
+                launcher.insert(0, sys.executable)
+            proc = subprocess.run(launcher + [path], stdout=subprocess.PIPE)
             self.assertEqual(proc.returncode, 0)
             self.assertEqual(json.loads(proc.stdout.decode().splitlines()[-1])["result"], "degraded")
 

@@ -242,7 +242,8 @@ python3 tests/mutate.py --module verifier               # mutation testing (posi
 * `tests/test_secrets_20261127.py` (13 tests): a secret given to the verifier does not come out of it (SPEC_NOTES
   N66): a canary in the key policy (a private key file where the policy goes, a private JWK member in an entry, a key
   where a name or `keyid` goes), in `AEE_SUBSTRATE_KEYS` and in the three limit variables is searched raw, in hex,
-  decimal, base64 and base64url, and as any 12-character piece, in stdout, stderr, the warnings and the files left;
+  decimal, base64 and base64url, and as any 12-character piece, in stdout, stderr, the warnings and the files left (and
+  where the statement path goes);
   an audit hook checks that no process, connection or write is made; three positive controls. Six of the tests fail
   on 0.2.0.
 * `tests/test_release_020.py` (4 tests): the version in the code, in `pyproject.toml`, in the README and in the

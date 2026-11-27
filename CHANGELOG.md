@@ -7,20 +7,31 @@ rule with the measure behind it.
 
 A secret given to the verifier does not come out of it (SPEC_NOTES N66, `tests/test_secrets_20261127.py`). Measured
 on 0.2.0 (the PyPI wheel, whose package files are those of the tag): 6 of the 13 new tests fail there. A key set
-where the `AEE_SUBSTRATE_KEYS` path goes, a key used as a member name, `keyid` or repeated name of the key policy,
-and a value of a limit variable were written to stderr; a policy file that is not UTF-8 had one byte written. Now:
+where the `AEE_SUBSTRATE_KEYS` path or the statement path goes, a key used as a member name, `keyid` or repeated name
+of the key policy, and a value of a limit variable were written to stderr; a policy file that is not UTF-8 had one byte
+written. Now:
 
 - warnings show a name or `keyid` of the key policy only when it is a string of at most 32 characters, otherwise its
   length (or the type of a value that is not a string);
-- why the key policy could not be read is said by the exception's type, errno name, JSON line and column, never by
-  its text; the path in `AEE_SUBSTRATE_KEYS` and the value of a limit variable only by their length;
+- why the key policy or the statement could not be read is said by the exception's type, errno name, JSON line and
+  column, never by its text; the path in `AEE_SUBSTRATE_KEYS`, the statement path and the value of a limit variable
+  only by their length; a warning about an entry of the policy names the entry by its index;
+- a name of at most 32 characters is still shown as written, so a secret that short put where a name goes (a 128-bit
+  key in hex is 32 characters) still comes out; every form of an Ed25519 private key (64 hex, 43 or 44 base64) is
+  longer;
 - a key-policy entry carrying a private JWK member (`d`, `p`, `q`, `dp`, `dq`, `qi`, `oth`, `k`; RFC 7518 section
-  6, RFC 8037 section 2) is skipped with a warning naming the member; in 0.2.0 it was kept. This is the only change of
-  outcome: such an entry no longer pins its key.
+  6, RFC 8037 section 2) is skipped with a warning naming the member; in 0.2.0 it was kept: such an entry no longer
+  pins its key;
+- the key policy file is read under the limit of the statement (16 MiB, N62): a larger file, or an endless device,
+  is treated as no pinned key (in 0.2.0 it was read whole: `AEE_SUBSTRATE_KEYS=/dev/zero` grew to the memory limit).
+  These two are the only changes of outcome.
 
 Unchanged: verdicts, codes, exit statuses and the JSON line for every other input; a private key file where the
-policy goes and secrets elsewhere in the environment came out nowhere on 0.2.0 either. The CI runs on every branch,
-on Linux, macOS and Windows.
+policy goes and secrets elsewhere in the environment came out nowhere on 0.2.0 either. The member names of the
+statement are quoted on purpose (N61): the statement is the evidence the verifier is asked about, held whole by whoever
+reads its output. The CI runs on every branch, the whole suite on Linux, macOS and Windows (`tests/portable.py`: a
+named pipe for `/dev/zero` on Windows, the `MemoryError` branches by fault injection where `RLIMIT_AS` is not
+enforced).
 
 ## 0.2.0 — released on 2026-11-22: outputs change
 

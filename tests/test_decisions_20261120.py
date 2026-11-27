@@ -8,7 +8,6 @@ from __future__ import annotations
 import base64
 import os
 import random
-import resource
 import subprocess
 import sys
 import tempfile
@@ -21,6 +20,7 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, HERE)
 
 import builder as B  # noqa: E402
+import portable as P  # noqa: E402
 from aee_verifier import ed25519  # noqa: E402
 from aee_verifier import verifier as V  # noqa: E402
 from aee_verifier.verifier import Verifier  # noqa: E402
@@ -132,9 +132,8 @@ class TestInputSizeLimit(unittest.TestCase):
 
     def test_endless_device_stops_at_the_default_limit_in_bounded_memory(self):
         # 64227ea: under this 300 MB address-space limit /dev/zero ended in MemoryError, after taking all of it
-        def limit():
-            resource.setrlimit(resource.RLIMIT_AS, (300 << 20, 300 << 20))
-        proc = run_cli("/dev/zero", preexec=limit)
+        with P.Endless() as path:           # /dev/zero, or a named pipe on Windows; the memory limit on Linux
+            proc = run_cli(path, preexec=P.memory_limit(300 << 20))
         self.assertEqual(proc.returncode, 2, proc.stderr[-300:])
         self.assertEqual(last_line(proc), UNREADABLE)
         self.assertIn(b"larger than the limit of 16777216 bytes", proc.stderr)

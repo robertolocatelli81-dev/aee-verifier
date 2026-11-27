@@ -175,6 +175,11 @@ class TestKeyPolicyCommandLine(Base):
     def test_a_key_set_where_the_path_goes(self):                         # fails on 0.2.0
         self.none("AEE_SUBSTRATE_KEYS=<key>", {"AEE_SUBSTRATE_KEYS": KEYNAME})
         self.none("AEE_SUBSTRATE_KEYS=<token>", {"AEE_SUBSTRATE_KEYS": TOKEN})
+        for key in (KEYNAME, TOKEN):        # a key typed where the statement path goes (N66)
+            r = self.none("argv=<key>", {}, key)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn(b"cannot read the statement (a path of %d characters): FileNotFoundError (ENOENT)" % len(key),
+                          r.stderr)
 
     def test_a_private_key_file_where_the_policy_goes(self):
         for name, data in (("seed.bin", SEED), ("seed.hex", KEYNAME), ("key.pem", PEM), ("key.jwk", json.dumps(JWK)),
@@ -205,6 +210,8 @@ class TestLimitsAndEnvironment(Base):
                 r = self.none(var, {var: value})
                 self.assertEqual(r.returncode, 2)
                 self.assertIn(var.encode(), r.stderr)                    # the variable is still named
+            r = self.none(var + "=0...0", {var: "0" * 40})               # digits, below 1: the other refusal
+            self.assertIn(b"%s is not a positive decimal integer (a value of 40 characters)" % var.encode(), r.stderr)
 
     def test_a_secret_elsewhere_in_the_environment(self):
         self.none("environment", {"SOME_SERVICE_TOKEN": TOKEN, "SIGNING_KEY": KEYNAME})
@@ -233,12 +240,26 @@ class TestKeyPolicyLibrary(Base):
         self.assertIn("(FileNotFoundError (ENOENT))", w[0])
         _, w = self.warnings(self.policy("bad.json", "{\n  x"))
         self.assertIn("(JSONDecodeError at line 2 column 3)", w[0])
+        # read under the limit of the statement (N62): a larger file, or an endless device, stops there
+        big = self.policy("big.json", b"")
+        with open(big, "r+b") as f:
+            f.truncate(cli.MAX_INPUT_BYTES + 1)
+        _, w = self.warnings(big)
+        self.assertIn("(InputTooLarge)", w[0])
 
     def test_short_names_are_still_shown(self):         # fails on 0.2.0 (the long name whole); the guard: the diagnosis stays
         name = "n" * NAME_CHARS
         _, w = self.warnings(self.policy("s.json", {"substrateObservationKeys": [], name: 1, name + "x": 2}))
         self.assertEqual(w, ["AEE_SUBSTRATE_KEYS: member(s) %r, a name of %d characters not read"
                              % (name, NAME_CHARS + 1)])
+        # a keyid shown by its length only: the entry is still named by its index
+        _, w = self.warnings(self.policy("e.json", {"substrateObservationKeys": [
+            {"keyid": "k", "publicKeyHex": PUB}, {"keyid": KEYNAME, "publicKeyHex": "00"},
+            {"keyid": KEYNAME, "publicKeyHex": "00" * 32}]}))
+        self.assertEqual(w, ["AEE_SUBSTRATE_KEYS: entry 1: key a name of 64 characters is not a 32-byte (Ed25519) "
+                             "public key; skipped",
+                             "AEE_SUBSTRATE_KEYS: entry 2: key a name of 64 characters is a point of small order; skipped "
+                             "(SPEC_NOTES N60)"])
 
 
 if __name__ == "__main__":

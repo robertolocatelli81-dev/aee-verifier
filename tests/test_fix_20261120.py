@@ -5,6 +5,8 @@ every test fails on cbb79e5 except the guards a class docstring names (they chec
 from __future__ import annotations
 
 import base64
+import contextlib
+import io
 import os
 import random
 import subprocess
@@ -13,6 +15,7 @@ import tempfile
 import time
 import unicodedata
 import unittest
+from unittest import mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -20,12 +23,14 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, HERE)
 
 import builder as B  # noqa: E402
+import portable as P  # noqa: E402
 from aee_verifier import ed25519  # noqa: E402
 from aee_verifier import cli as CLI  # noqa: E402
 from aee_verifier import verifier as V  # noqa: E402
 from aee_verifier.verifier import Verifier  # noqa: E402
 
 KEYS = [(B.SUBSTRATE_KEYID, B.SUBSTRATE_PUB)]
+UNREADABLE = '{"verdict":"error","codes":["unreadable-input"],"result":null,"tiers":[]}'
 LINE_BREAKING = ("Cc", "Zl", "Zp")
 
 
@@ -117,17 +122,25 @@ class TestOneLineOutput(unittest.TestCase):
         self.assertTrue(lines[2].startswith('{"verdict":"accept"'))
 
 
-@unittest.skipUnless(sys.platform.startswith("linux") and os.path.exists("/dev/zero"), "needs /dev/zero and RLIMIT_AS")
+def main_in_process(path, **patch):
+    """cli.main in this process with one name of the module replaced (fault injection): exit, stdout, stderr."""
+    out, err = io.StringIO(), io.StringIO()
+    with mock.patch.multiple(CLI, **patch), contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        rc = CLI.main([path])
+    return rc, out.getvalue(), err.getvalue()
+
+
 class TestUnreadableInput(unittest.TestCase):
     """An input larger than the memory the process may use ended in a traceback, exit 1, no JSON line."""
 
     def test_input_beyond_the_memory_limit_is_exit_2_with_the_json_line(self):
-        import resource
-
-        def limit():
-            resource.setrlimit(resource.RLIMIT_AS, (600 * 1024 * 1024, 600 * 1024 * 1024))
-
-        proc = run_cli(b"", preexec=limit, path="/dev/zero")
+        def no_memory(*_a):
+            raise MemoryError
+        rc, out, err = main_in_process("x.json", read_limited=no_memory)      # every system: the branch itself
+        self.assertEqual((rc, out.splitlines()[-1]), (2, UNREADABLE), err)
+        self.assertIn("cannot read the statement (a path of 6 characters): MemoryError", err)
+        with P.Endless() as path:           # the real input; the memory limit where it is enforced (Linux)
+            proc = run_cli(b"", preexec=P.memory_limit(600 * 1024 * 1024), path=path)
         self.assertEqual(proc.returncode, 2, proc.stderr[-300:])
         self.assertEqual(proc.stdout.decode().splitlines()[-1],
                          '{"verdict":"error","codes":["unreadable-input"],"result":null,"tiers":[]}')
@@ -138,11 +151,20 @@ class TestInputTooLargeToParse(unittest.TestCase):
     on 68c6507: the MemoryError was handled only around the read)."""
 
     def test_memory_exhausted_while_verifying_is_exit_2_with_the_json_line(self):
-        import resource
-
-        def limit():
-            resource.setrlimit(resource.RLIMIT_AS, (250 * 1024 * 1024, 250 * 1024 * 1024))
-
+        class NoMemory(Verifier):
+            def verify_bytes(self, data):
+                raise MemoryError
+        with tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False) as fh:
+            fh.write(b"{}")
+        try:                                # every system: the branch itself, by fault injection
+            rc, out, err = main_in_process(fh.name, Verifier=NoMemory)
+        finally:
+            os.unlink(fh.name)
+        self.assertEqual((rc, out.splitlines()[-1]), (2, UNREADABLE), err)
+        self.assertNotIn("Traceback", err)
+        if not P.LIMITS_MEMORY:             # macOS ignores RLIMIT_AS, Windows has no preexec_fn: the branch is shown
+            return
+        limit = P.memory_limit(250 * 1024 * 1024)
         with tempfile.NamedTemporaryFile("wb", suffix=".json", delete=False) as fh:
             fh.write(b'{"a":"' + b"x" * (100 << 20) + b'"}')
         try:

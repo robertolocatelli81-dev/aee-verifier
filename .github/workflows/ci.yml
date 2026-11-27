@@ -9,13 +9,20 @@ jobs:
   tests:
     # 3.9 has no setup-python build for ubuntu-26.04, which `ubuntu-latest` is becoming between 2026-10-19 and 2026-11-19
     # (actions/runner-images#14748): the floor runs on ubuntu-24.04, the other two on the current label
-    runs-on: ${{ matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest' }}
+    # Linux, macOS and Windows: tests/portable.py gives each test the equivalent its system has (an endless named pipe
+    # for /dev/zero on Windows, the MemoryError branches by fault injection where RLIMIT_AS is not enforced)
+    runs-on: ${{ matrix.os == 'ubuntu' && (matrix.python-version == '3.9' && 'ubuntu-24.04' || 'ubuntu-latest') || format('{0}-latest', matrix.os) }}
+    defaults:
+      run:
+        shell: bash
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu, macos, windows]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]   # pyproject declares 3.9 or later: every version from the floor
     steps:
-      - uses: actions/checkout@v7       # Node 24: Node 20 actions are no longer run (GitHub changelog, 2026-09-23)
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (Node 24)
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: "Standard library only: cryptography is not importable in this job"
@@ -27,6 +34,7 @@ jobs:
           set -e
           check() {
             out=$(python -m unittest "tests.$1" 2>&1) || { echo "$out"; exit 1; }
+            out=$(printf '%s\n' "$out" | tr -d '\r')       # Windows writes \r\n
             n=$(echo "$out" | sed -n 's/^Ran \([0-9]*\) test.*/\1/p' | tail -1)
             last=$(echo "$out" | tail -1)
             echo "tests/$1.py: $n tests (README: $2), summary: $last (expected: $3)"
@@ -45,6 +53,7 @@ jobs:
         run: |
           set -e
           out=$(python -m unittest discover -s tests -p "test_*.py" 2>&1) || { echo "$out"; exit 1; }
+          out=$(printf '%s\n' "$out" | tr -d '\r')
           echo "$out" | tail -3
           echo "$out" | grep -qx "Ran 301 tests in [0-9.]*s" || { echo "::error::discovery did not run 301 tests"; exit 1; }
           [ "$(echo "$out" | tail -1)" = "OK (skipped=1)" ] || { echo "::error::expected exactly one skipped test (the cryptography oracle)"; exit 1; }
@@ -53,31 +62,7 @@ jobs:
           set -e
           python -m pip install cryptography
           out=$(python -m unittest tests.test_units 2>&1) || { echo "$out"; exit 1; }
+          out=$(printf '%s\n' "$out" | tr -d '\r')
           echo "$out" | tail -3
           echo "$out" | grep -qx "Ran 27 tests in [0-9.]*s" || { echo "::error::did not run 27 tests"; exit 1; }
           [ "$(echo "$out" | tail -1)" = "OK" ] || { echo "::error::the cryptography oracle was still skipped"; exit 1; }
-  secrets-macos-windows:
-    # SPEC_NOTES N66 on the other two systems: the test uses os.path, errno names and an audit hook, nothing POSIX-only.
-    # The rest of the suite is not run here yet: it uses resource (RLIMIT_AS), /dev/zero, preexec_fn and the shebang
-    # launcher, whose Windows equivalents (a Job Object memory limit, an endless named pipe, sys.executable) are to be written
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: ${{ matrix.python-version }}
-      - name: "tests/test_secrets_20261127.py: 13 tests, OK"
-        run: |
-          set -e
-          out=$(python -m unittest tests.test_secrets_20261127 2>&1) || { echo "$out"; exit 1; }
-          echo "$out" | tail -3
-          echo "$out" | grep -qx "Ran 13 tests in [0-9.]*s" || { echo "::error::did not run 13 tests"; exit 1; }
-          [ "$(echo "$out" | tail -1)" = "OK" ] || { echo "::error::expected OK"; exit 1; }
