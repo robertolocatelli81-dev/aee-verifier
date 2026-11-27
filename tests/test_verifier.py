@@ -1346,7 +1346,7 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(obj["tiers"], ["attested"] * 3)
 
     def test_unreadable_key_file_is_fail_closed(self):
-        rc, obj, _, err = self.run_cli(B.dumps(B.scenario_pass()[0]), env_keys="/nonexistent/keys.json")
+        rc, obj, _, err = self.run_cli(B.dumps(B.scenario_pass()[0]), env_keys=os.path.abspath(os.path.join(os.sep, "nonexistent", "keys.json")))   # absolute on Windows too (3.13: "/x" is not)
         self.assertEqual(rc, 0)
         self.assertEqual(obj["tiers"], ["unattested"] * 3)
         self.assertIn("warning", err)
